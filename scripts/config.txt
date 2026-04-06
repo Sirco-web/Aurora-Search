@@ -1,0 +1,6 @@
+[Proxy]
+use_proxy = true
+proxy_list = auto
+rotate_proxy = true
+proxy_timeout = 15
+

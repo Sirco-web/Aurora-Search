@@ -1,0 +1,79 @@
+# Aurora Search Configuration File
+# All settings can be modified to tune crawler behavior
+
+[Crawler]
+# Crawler name/session identifier
+crawler_name = Auroracrawler
+# Maximum number of URLs to crawl (0 = unlimited, stopped by max_file_size)
+crawl_limit = 100000
+# Number of concurrent worker threads
+num_workers = 50
+# Request timeout in seconds
+request_timeout = 15
+# Delay between requests (random range: min_delay to max_delay) - be respectful to servers
+min_delay = 3
+max_delay = 8
+
+[Indexing]
+# Maximum description length (in characters)
+max_description_length = 300
+# Minimum word length to index
+min_word_length = 2
+# Maximum number of words to store per page (0 = unlimited)
+max_words_per_page = 1000
+
+[Data]
+# Maximum total data size in MB for the entire crawl (20GB max)
+max_total_size_mb = 20480
+# Maximum file size in MB for individual compressed index files
+max_file_size = 2048
+# Enable compression (true/false)
+enable_compression = true
+# Compression format (gzip/bz2)
+compression_format = gzip
+
+[PageRank]
+# Damping factor (0.0 to 1.0, typically 0.85 for production)
+damping_factor = 0.85
+# Maximum iterations for PageRank computation
+max_iterations = 200
+# Tolerance for convergence
+convergence_tolerance = 0.000001
+
+[Server]
+# Flask server host (0.0.0.0 = all interfaces)
+host = 0.0.0.0
+# Flask server port
+port = 5000
+# Enable debug mode (set to false in production)
+debug = true
+# Number of results per search page (like Google)
+results_per_page = 10
+
+[Startup]
+# Auto-run crawler on startup if no index exists
+auto_run_crawler = true
+# Run crawler in parallel mode (all scripts simultaneously)
+parallel_mode = true
+# Maximum startup time in seconds (0 = no limit)
+startup_timeout = 300
+
+[Proxy]
+# Enable proxy rotation for crawler requests
+use_proxy = false
+# Proxy list (pipe-separated URLs)
+# 
+# BACKUP CLOUDFLARE WORKER (ready to use):
+# proxy_list = https://crawler-23436223-fufbwqrf-sirco.timco-store1.workers.dev
+# 
+# Examples with your own proxies:
+#   - https://worker.YOUR-USERNAME.workers.dev
+#   - http://user:pass@proxy.example.com:8080
+#   - socks5://vpn-host:1080
+#   - socks5://127.0.0.1:1090 (from VPN Manager)
+# Multiple: https://worker1.workers.dev|http://proxy:8080|socks5://localhost:1090
+proxy_list = 
+# Rotate proxy on each request (true/false)
+rotate_proxy = true
+# Timeout for proxy connections in seconds
+proxy_timeout = 15

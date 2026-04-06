@@ -1,0 +1,141 @@
+<!-- search.html -->
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Search Results - My Search Engine</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="search-result-area">
+      <a href="index.html">
+        <img class="search-logo-result" src="images/sloth_search.png" />
+      </a>
+
+      <form
+        class="search-form"
+        id="search-form"
+        action="search.html"
+        method="get"
+        autocomplete="off"
+      >
+        <div class="search-form-input">
+          <input type="text" name="search" id="search-input" />
+          <img class="mic" src="./images/google_mic.svg" />
+          <img class="camera" src="./images/google_camera.svg" />
+          <img
+            class="search-icon-result"
+            src="./images/google_search_icon.svg"
+          />
+        </div>
+      </form>
+    </div>
+    <div id="results"></div>
+    <div id="pagination"></div>
+    <script>
+      // Get the query parameter from the URL
+      const urlParams = new URLSearchParams(window.location.search);
+      const query = urlParams.get('search');
+      document.getElementById('search-input').value = query;
+      let page = parseInt(urlParams.get('page')) || 1;
+      const numResults = 10; // Adjust as needed
+
+      // Add pagination controls
+      function addPaginationControls(totalResults) {
+        const paginationDiv = document.getElementById('pagination');
+        paginationDiv.innerHTML = ''; // Clear any existing pagination controls
+
+        if (page > 1) {
+          const prevLink = document.createElement('a');
+          prevLink.href = `search.html?search=${encodeURIComponent(
+            query
+          )}&page=${page - 1}`;
+          prevLink.textContent = 'Previous';
+          paginationDiv.appendChild(prevLink);
+        }
+
+        if (totalResults === numResults) {
+          const nextLink = document.createElement('a');
+          nextLink.href = `search.html?search=${encodeURIComponent(
+            query
+          )}&page=${page + 1}`;
+          nextLink.textContent = 'Next';
+          paginationDiv.appendChild(nextLink);
+        }
+      }
+
+      // Function to fetch and display search results
+      async function fetchResults() {
+        try {
+          const response = await fetch(
+            `/search?q=${encodeURIComponent(
+              query
+            )}&page=${page}&num_results=${numResults}`
+          );
+          const data = await response.json();
+
+          const resultsDiv = document.getElementById('results');
+
+          // Handle indexing in progress (202 status)
+          if (response.status === 202) {
+            resultsDiv.innerHTML = `
+              <div style="text-align: center; padding: 40px; color: #666;">
+                <div style="font-size: 48px; margin-bottom: 20px;">⏳</div>
+                <p style="font-size: 18px; font-weight: bold;">${data.message || 'Indexing in progress...'}</p>
+                <p style="margin-top: 10px; color: #999;">
+                  📊 ${data.words_indexed} words indexed | 📄 ${data.docs_indexed} documents indexed
+                </p>
+                <p style="margin-top: 30px; color: #999; font-size: 14px;">
+                  This page will automatically update when indexing is complete.
+                </p>
+              </div>
+            `;
+            // Auto-refresh every 2 seconds while indexing
+            setTimeout(fetchResults, 2000);
+            return;
+          }
+
+          if (data.results.length === 0) {
+            resultsDiv.innerHTML = `<p>No results found for "<strong>${query}</strong>".</p>`;
+            return;
+          }
+
+          data.results.forEach((result) => {
+            const resultDiv = document.createElement('div');
+            resultDiv.classList.add('result');
+
+            const titleLink = document.createElement('a');
+            titleLink.classList.add('result-title');
+            titleLink.href = result.url;
+            titleLink.textContent = result.title || result.url;
+
+            const urlDiv = document.createElement('div');
+            urlDiv.classList.add('result-url');
+            urlDiv.textContent = result.url;
+
+            const descriptionDiv = document.createElement('div');
+            descriptionDiv.classList.add('result-description');
+            descriptionDiv.textContent = result.description;
+
+            resultDiv.appendChild(titleLink);
+            resultDiv.appendChild(urlDiv);
+            resultDiv.appendChild(descriptionDiv);
+
+            resultsDiv.appendChild(resultDiv);
+          });
+
+          // Add pagination controls
+          addPaginationControls(data.results.length);
+        } catch (error) {
+          console.error('Error fetching search results:', error);
+          document.getElementById('results').innerHTML = `
+            <p style="color: red;">Error fetching results. Please try again.</p>
+          `;
+        }
+      }
+
+      // Fetch and display results when the page loads
+      fetchResults();
+    </script>
+  </body>
+</html>
