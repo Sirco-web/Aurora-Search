@@ -1,484 +1,692 @@
+import atexit
+import configparser
+import json
+import os
+import signal
+import site
+import ssl
 import subprocess
 import sys
-import configparser
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
 
 # List of required packages
 REQUIRED_PACKAGES = {
-    'flask': 'flask',
-    'flask_cors': 'flask-cors',
-    'nltk': 'nltk',
-    'requests': 'requests',
-    'bs4': 'beautifulsoup4'
+    "flask": "flask",
+    "flask_cors": "flask-cors",
+    "nltk": "nltk",
+    "requests": "requests",
+    "bs4": "beautifulsoup4",
+    "socks": "pysocks",
+    "psutil": "psutil",
 }
 
+
+def _candidate_site_packages():
+    candidates = set()
+    version = f"{sys.version_info.major}.{sys.version_info.minor}"
+
+    try:
+        candidates.add(site.getusersitepackages())
+    except Exception:
+        pass
+
+    home = os.path.expanduser("~")
+    candidates.add(os.path.join(home, ".local", "lib", f"python{version}", "site-packages"))
+
+    sudo_user = os.environ.get("SUDO_USER")
+    if sudo_user:
+        sudo_home = os.path.expanduser(f"~{sudo_user}")
+        candidates.add(os.path.join(sudo_home, ".local", "lib", f"python{version}", "site-packages"))
+
+    return [path for path in candidates if path]
+
+
+def _bootstrap_python_paths():
+    for path in _candidate_site_packages():
+        if os.path.isdir(path) and path not in sys.path:
+            sys.path.append(path)
+
+
+_bootstrap_python_paths()
+
+
 def install_dependencies():
-    """Install missing dependencies with --break-system-packages flag"""
+    """Install missing dependencies with --break-system-packages flag."""
     missing_packages = []
-    
+
     for module_name, package_name in REQUIRED_PACKAGES.items():
         try:
             __import__(module_name)
         except ImportError:
             missing_packages.append(package_name)
-    
+
     if missing_packages:
+        if os.environ.get("SUDO_USER"):
+            print(
+                "Missing imports were detected while running under sudo. "
+                "Checked user site-packages first, but they still were not importable."
+            )
+            print("If needed, run without sudo for dependency install, then rerun sudo for VPN mode.")
         print(f"Installing missing packages: {', '.join(missing_packages)}")
         for package in missing_packages:
             try:
-                subprocess.check_call([
-                    sys.executable, '-m', 'pip', 'install',
-                    '--break-system-packages', package
-                ])
-                print(f"✓ Successfully installed {package}")
-            except subprocess.CalledProcessError as e:
-                print(f"✗ Failed to install {package}: {e}")
+                subprocess.check_call(
+                    [
+                        sys.executable,
+                        "-m",
+                        "pip",
+                        "install",
+                        "--break-system-packages",
+                        package,
+                    ]
+                )
+                print(f"Installed {package}")
+            except subprocess.CalledProcessError as exc:
+                print(f"Failed to install {package}: {exc}")
                 sys.exit(1)
     else:
-        print("✓ All dependencies are already installed")
+        print("All dependencies are already installed.")
 
-def load_config():
-    """Load configuration from config.txt"""
-    config = configparser.ConfigParser()
-    config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.txt')
-    
-    if os.path.exists(config_path):
-        config.read(config_path)
-        print(f"✓ Loaded config from {config_path}")
-    else:
-        print(f"⚠ Config file not found at {config_path}")
-    
-    return config
 
-# Install dependencies before importing
 install_dependencies()
 
-from flask import Flask, request, jsonify, send_from_directory
-import csv
+from flask import Flask, jsonify, request, send_from_directory
+from flask_cors import CORS
 import nltk
 from nltk.corpus import stopwords
 from nltk.stem import PorterStemmer
 from nltk.tokenize import word_tokenize
-import ssl
-from flask_cors import CORS
-import os
-import gzip
-import json
+from werkzeug.serving import make_server
 
-# Load configuration
+from scripts.crawler import load_config as load_crawler_config
+from scripts.crawler import run_crawler_service
+
+ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(ROOT_DIR, "data")
+IDX_FILE = os.path.join(DATA_DIR, "inverted_index.json")
+DOC_FILE = os.path.join(DATA_DIR, "doc_info.json")
+
+os.makedirs(DATA_DIR, exist_ok=True)
+
+
+def load_config():
+    """Load configuration from config.txt."""
+    config = configparser.ConfigParser()
+    config_path = os.path.join(ROOT_DIR, "config.txt")
+    if os.path.exists(config_path):
+        config.read(config_path)
+        print(f"Loaded config from {config_path}")
+    else:
+        print(f"Config file not found at {config_path}")
+    return config
+
+
 CONFIG = load_config()
 
-# Initialize Flask app with static folder
-app = Flask(__name__, static_folder='public', static_url_path='')
-
+app = Flask(__name__, static_folder="public", static_url_path="")
 CORS(app)
 
-# NLTK setup (handles SSL certificate issues)
 try:
     _create_unverified_https_context = ssl._create_unverified_context
 except AttributeError:
-    pass
+    _create_unverified_https_context = None
 else:
     ssl._create_default_https_context = _create_unverified_https_context
 
-# Download NLTK data only if not already downloaded
+
 def download_nltk_resources():
     try:
-        stopwords.words('english')
+        stopwords.words("english")
     except LookupError:
-        print("Downloading NLTK data...")
-        nltk.download('stopwords')
-    try:
-        word_tokenize('test')
-    except LookupError:
-        nltk.download('punkt')
+        print("Downloading NLTK stopwords...")
+        nltk.download("stopwords", quiet=True)
 
-def run_crawler():
-    """Auto-run the crawler to generate index files (parallel mode)"""
-    print("\n📡 Starting web crawler to generate search index (PARALLEL MODE)...")
-    print("All scripts running simultaneously like Google's indexing system...\n")
     try:
-        root_dir = os.path.dirname(os.path.abspath(__file__))
-        
-        # Run crawler asynchronously (all scripts in parallel)
-        result = subprocess.run(
-            [sys.executable, 'scripts/advanced_crawler.py'],
-            cwd=root_dir,
-            capture_output=True,
-            text=True,
-            timeout=300  # 5 minute timeout
-        )
-        
-        if result.returncode == 0:
-            # Print crawler output
-            if result.stdout:
-                print(result.stdout)
-            print("✓ Crawler completed successfully!")
-            return True
-        else:
-            print(f"✗ Crawler failed:")
-            if result.stderr:
-                print(result.stderr)
-            return False
-    except subprocess.TimeoutExpired:
-        print("✗ Crawler timed out (exceeded 300 seconds)")
-        return False
-    except Exception as e:
-        print(f"✗ Error running crawler: {e}")
-        return False
-        
-# Initialize NLTK components
-print("\n🔤 NLTK SETUP")
+        word_tokenize("test")
+    except LookupError:
+        print("Downloading NLTK punkt...")
+        nltk.download("punkt", quiet=True)
+        try:
+            word_tokenize("test")
+        except LookupError:
+            nltk.download("punkt_tab", quiet=True)
+
+
+print("\nNLTK SETUP")
 print("=" * 50)
 download_nltk_resources()
-stop_words = set(stopwords.words('english'))
+stop_words = set(stopwords.words("english"))
 ps = PorterStemmer()
-print("✓ NLTK initialized")
+print("NLTK initialized")
+
+index_lock = threading.Lock()
+status_lock = threading.Lock()
+runtime_lock = threading.Lock()
+
+inverted_index = {}
+document_info = {}
+runtime_state = {
+    "initialized": False,
+    "crawler_thread": None,
+    "crawler_stop_event": None,
+    "vpn_manager": None,
+    "server": None,
+    "shutdown_started": False,
+    "shutdown_complete": False,
+    "startup_options": {},
+}
+indexing_status = {
+    "status": "idle",
+    "message": "Server not started yet.",
+    "docs_indexed": 0,
+    "words_indexed": 0,
+    "crawl_count": 0,
+    "queue_size": 0,
+    "last_saved_count": 0,
+    "last_saved_at": None,
+    "continuous_mode": True,
+    "save_every": 30,
+}
 
 
 def load_inverted_index(file_path):
-    """Load compressed JSON inverted index"""
-    inverted_index = {}
+    """Load compressed JSON inverted index."""
+    loaded_index = {}
     try:
-        with gzip.open(file_path, 'rt', encoding='utf-8') as f:
-            data = json.load(f)
+        with open(file_path, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
             for word, doc_ids in data.items():
-                inverted_index[word] = set(doc_ids)
-            print(f"   ✓ Loaded inverted index ({len(inverted_index)} words)")
+                loaded_index[word] = set(doc_ids)
     except FileNotFoundError:
-        print(f"   ✗ File not found: {file_path}")
-    except json.JSONDecodeError as e:
-        print(f"   ✗ JSON decode error: {e}")
-    except OSError as e:
-        print(f"   ✗ File read error: {e}")
-    return inverted_index
+        return {}
+    except (json.JSONDecodeError, OSError) as exc:
+        print(f"Failed to load inverted index: {exc}")
+        return {}
+    return loaded_index
+
 
 def load_document_info(file_path):
-    """Load compressed JSON document info"""
-    document_info = {}
+    """Load compressed JSON document info."""
+    loaded_docs = {}
     try:
-        with gzip.open(file_path, 'rt', encoding='utf-8') as f:
-            data = json.load(f)
+        with open(file_path, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
             for doc_id, info in data.items():
-                document_info[int(doc_id)] = {
-                    'url': info['url'],
-                    'title': info['title'],
-                    'description': info['description'],
-                    'pagerank': float(info.get('pagerank', 0))
+                loaded_docs[int(doc_id)] = {
+                    "url": info["url"],
+                    "title": info["title"],
+                    "description": info["description"],
+                    "pagerank": float(info.get("pagerank", 0)),
                 }
-            print(f"   ✓ Loaded document info ({len(document_info)} documents)")
     except FileNotFoundError:
-        print(f"   ✗ File not found: {file_path}")
-    except json.JSONDecodeError as e:
-        print(f"   ✗ JSON decode error: {e}")
-    except OSError as e:
-        print(f"   ✗ File read error: {e}")
-    return document_info
+        return {}
+    except (json.JSONDecodeError, OSError) as exc:
+        print(f"Failed to load document info: {exc}")
+        return {}
+    return loaded_docs
+
+
+def update_status(status=None, message=None, **fields):
+    with status_lock:
+        if status is not None:
+            indexing_status["status"] = status
+        if message is not None:
+            indexing_status["message"] = message
+        indexing_status.update(fields)
+
+
+def load_indexes_into_memory(message=None, status="ready"):
+    global inverted_index, document_info
+
+    new_inverted_index = load_inverted_index(IDX_FILE)
+    new_document_info = load_document_info(DOC_FILE)
+    if not new_inverted_index or not new_document_info:
+        return False
+
+    with index_lock:
+        inverted_index = new_inverted_index
+        document_info = new_document_info
+
+    update_status(
+        status=status,
+        message=message or "Search index loaded.",
+        docs_indexed=len(new_document_info),
+        words_indexed=len(new_inverted_index),
+    )
+    return True
+
 
 def parse_query(query):
-    # Tokenize the query
     tokens = word_tokenize(query.lower())
-    # Remove non-alphabetic tokens and stop words, then stem the words
-    query_words = [
-        ps.stem(word) for word in tokens if word.isalpha() and word not in stop_words
-    ]
-    return query_words
+    return [ps.stem(word) for word in tokens if word.isalpha() and word not in stop_words]
 
-def search(query, inverted_index, document_info, num_results=10, page=1):
+
+def search(query, current_index, current_docs, num_results=10, page=1):
     query_words = parse_query(query)
     if not query_words:
         return []
-    # Find documents that contain any of the query words
+
     matched_doc_ids = set()
     for word in query_words:
-        if word in inverted_index:
-            matched_doc_ids.update(inverted_index[word])
+        if word in current_index:
+            matched_doc_ids.update(current_index[word])
+
     if not matched_doc_ids:
         return []
-    # Retrieve documents and their PageRank scores
+
     results = []
     for doc_id in matched_doc_ids:
-        info = document_info[doc_id]
-        results.append({
-            'doc_id': doc_id,
-            'url': info['url'],
-            'title': info['title'],
-            'description': info['description'],
-            'pagerank': info['pagerank']
-        })
-    # Sort documents by PageRank score 
-    sorted_results = sorted(results, key=lambda x: x['pagerank'], reverse=True)
-    # Pagination
+        info = current_docs.get(doc_id)
+        if not info:
+            continue
+        results.append(
+            {
+                "doc_id": doc_id,
+                "url": info["url"],
+                "title": info["title"],
+                "description": info["description"],
+                "pagerank": info["pagerank"],
+            }
+        )
+
+    sorted_results = sorted(results, key=lambda item: item["pagerank"], reverse=True)
     start = (page - 1) * num_results
     end = start + num_results
-    paginated_results = sorted_results[start:end]
-    return paginated_results
+    return sorted_results[start:end]
 
-# Global index state (updated in background)
-inverted_index = {}
-document_info = {}
-indexing_status = {
-    'status': 'initializing',  # initializing, indexing, ready, error
-    'progress': 0,
-    'message': 'Starting up...',
-    'docs_indexed': 0,
-    'words_indexed': 0
-}
 
-# Get paths in /data directory
-root_dir = os.path.dirname(os.path.abspath(__file__))
-data_dir = os.path.join(root_dir, 'data')
+def prompt_yes_no(prompt, default):
+    if not sys.stdin.isatty():
+        return default
 
-# Ensure data directory exists
-os.makedirs(data_dir, exist_ok=True)
+    suffix = "Y/n" if default else "y/N"
+    answer = input(f"{prompt} [{suffix}]: ").strip().lower()
+    if not answer:
+        return default
+    return answer in {"y", "yes"}
 
-idx_file = os.path.join(data_dir, 'advanced_inverted_index.json.gz')
-doc_file = os.path.join(data_dir, 'advanced_doc_info.json.gz')
 
-# Auto-setup VPN and proxies on startup
-def auto_setup_vpn():
-    """Automatically download VPN configs and start VPN manager"""
-    vpn_configs_dir = os.path.join(root_dir, 'data', 'vpn_configs')
-    
-    # Check if VPN configs exist
-    if os.path.exists(vpn_configs_dir):
-        configs = [f for f in os.listdir(vpn_configs_dir) if f.endswith('.ovpn')]
-        if configs:
-            print(f"\n✅ Found {len(configs)} VPN configs in {vpn_configs_dir}")
-            # Try to start VPN manager
-            try:
-                print("🔐 Starting VPN Manager in background...")
-                vpn_manager_path = os.path.join(root_dir, 'scripts', 'vpn-manager.py')
-                subprocess.Popen(
-                    [sys.executable, vpn_manager_path],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL
-                )
-                print("✅ VPN Manager started (runs in background)")
-                time.sleep(10)  # Wait for VPNs to connect
-                # Auto-configure proxies
-                print("🔧 Auto-configuring proxies...")
-                # Update config with VPN proxies (will auto-detect active ones)
-                configure_openvpn_proxies()
-                return True
-            except Exception as e:
-                print(f"⚠️  Could not start VPN Manager: {e}")
-                return False
+def prompt_int(prompt, default, minimum=1):
+    if not sys.stdin.isatty():
+        return default
+
+    answer = input(f"{prompt} [{default}]: ").strip()
+    if not answer:
+        return default
+    try:
+        value = int(answer)
+    except ValueError:
+        print(f"Using default value {default}.")
+        return default
+    return max(minimum, value)
+
+
+def collect_startup_options():
+    configured_proxy_list = CONFIG.get("Proxy", "proxy_list", fallback="").strip()
+    proxy_default = CONFIG.getboolean("Proxy", "use_proxy", fallback=False) and bool(configured_proxy_list)
+    default_continuous = CONFIG.getboolean("Startup", "continuous_crawl", fallback=True)
+    default_reindex_every = CONFIG.getint("Startup", "reindex_every_pages", fallback=30)
+
+    options = {
+        "start_crawler": True,
+        "continuous_crawl": default_continuous,
+        "reindex_every": default_reindex_every,
+        "use_proxy": proxy_default,
+        "proxy_list": configured_proxy_list,
+        "start_vpn": False,
+        "start_all_vpns": True,
+    }
+
+    if not sys.stdin.isatty():
+        return options
+
+    print("\nSERVER STARTUP QUESTIONS")
+    print("=" * 50)
+    options["start_crawler"] = prompt_yes_no("Start the crawler with the server?", True)
+    options["continuous_crawl"] = (
+        prompt_yes_no("Keep crawling while the server is running?", default_continuous)
+        if options["start_crawler"]
+        else False
+    )
+    options["reindex_every"] = (
+        prompt_int("Reindex after how many crawled pages?", default_reindex_every, minimum=1)
+        if options["start_crawler"]
+        else default_reindex_every
+    )
+    options["start_vpn"] = prompt_yes_no("Start all VPN tunnels before crawling?", False)
+    options["start_all_vpns"] = options["start_vpn"]
+    if options["start_vpn"]:
+        options["use_proxy"] = True
+        options["proxy_list"] = ""
+        print("VPN mode will start every working tunnel and rotate crawler requests across all active local proxies.")
     else:
-        print(f"\n📥 No VPN configs found. Attempting auto-download...")
-        try:
-            download_vpn_configs_script = os.path.join(root_dir, 'scripts', 'download-vpn-configs.py')
-            print("🔐 Downloading OpenVPN configs from GitHub...")
-            # Note: In production, this could be silent. For now, we'll notify user.
-            print("   Run: python3 scripts/download-vpn-configs.py")
-            print("   To download VPN configs for distributed crawling")
-        except Exception as e:
-            print(f"⚠️  Could not download VPN configs: {e}")
+        options["use_proxy"] = prompt_yes_no(
+            "Use proxy_list from config.txt for crawler requests?",
+            proxy_default,
+        )
+        options["proxy_list"] = configured_proxy_list if options["use_proxy"] else ""
+    return options
+
+
+def print_startup_summary(options):
+    print("\nSTARTUP SUMMARY")
+    print("=" * 50)
+    print(f"Crawler enabled: {options['start_crawler']}")
+    print(f"Continuous crawl: {options['continuous_crawl']}")
+    print(f"Reindex every: {options['reindex_every']} pages")
+    print(f"Use configured proxies: {options['use_proxy']}")
+    print(f"Start VPN first: {options['start_vpn']}")
+    print(f"Start all VPN configs: {options['start_all_vpns']}")
+    if options["start_vpn"]:
+        print("VPN routing mode: multiple active tunnels with rotating local proxies")
+
+
+def start_vpn_if_requested(options):
+    if not options["start_vpn"]:
+        return True
+
+    try:
+        from scripts.vpn_manager import VPNManager
+    except Exception as exc:
+        print(f"VPN support could not be loaded: {exc}")
         return False
 
-def configure_openvpn_proxies():
-    """Auto-configure OpenVPN proxies in config.txt"""
-    # Look for active VPN connections on localhost:1090+
-    proxies = []
-    for port in range(1090, 1110):  # Check ports 1090-1109
-        try:
-            import socket
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(0.5)
-            result = sock.connect_ex(('127.0.0.1', port))
-            sock.close()
-            if result == 0:
-                proxies.append(f'socks5://127.0.0.1:{port}')
-        except:
-            pass
-    
-    if proxies:
-        print(f"✅ Detected {len(proxies)} active VPN connections")
-        # Update config.txt
-        update_config_proxies(proxies)
-    else:
-        print("⚠️  No active VPN connections detected on localhost:1090-1109")
-        print("   Run: python3 scripts/vpn-manager.py (in separate terminal)")
+    manager = VPNManager()
+    runtime_state["vpn_manager"] = manager
+    if not manager.check_openvpn_installed():
+        print("OpenVPN is not installed, so VPN startup failed.")
+        return False
 
-def update_config_proxies(proxy_list):
-    """Update config.txt with proxy list"""
-    config_path = os.path.join(root_dir, 'config.txt')
-    try:
-        with open(config_path, 'r') as f:
-            lines = f.readlines()
-        
-        new_lines = []
-        in_proxy_section = False
-        updated_proxy_list = False
-        updated_use_proxy = False
-        
-        for line in lines:
-            if line.strip().startswith('[Proxy]'):
-                in_proxy_section = True
-                new_lines.append(line)
-            elif in_proxy_section and line.strip().startswith('proxy_list'):
-                new_lines.append(f'proxy_list = {"".join(proxy_list)}\n')
-                updated_proxy_list = True
-            elif in_proxy_section and line.strip().startswith('use_proxy'):
-                new_lines.append('use_proxy = true\n')
-                updated_use_proxy = True
-            elif in_proxy_section and line.strip().startswith('['):
-                in_proxy_section = False
-                new_lines.append(line)
-            else:
-                new_lines.append(line)
-        
-        with open(config_path, 'w') as f:
-            f.writelines(new_lines)
-        
-        print(f"✅ Updated config.txt with {len(proxy_list)} VPN proxies")
-    except Exception as e:
-        print(f"⚠️  Could not update config: {e}")
+    configs = manager.find_vpn_configs()
+    if not configs:
+        print(f"No VPN configs were found in {manager.vpn_configs_dir}.")
+        return False
 
-def background_indexing():
-    """Run crawler and indexing in background (non-blocking)"""
-    global inverted_index, document_info, indexing_status
-    
-    print("\n⚙️ BACKGROUND INDEXING STARTED (NON-BLOCKING)")
+    print("\nVPN STARTUP")
     print("=" * 50)
-    
-    # Try to load existing indexes first
-    if os.path.exists(idx_file) and os.path.exists(doc_file):
-        print("Loading existing index files from cache...")
-        inverted_index = load_inverted_index(idx_file)
-        document_info = load_document_info(doc_file)
-        if inverted_index and document_info:
-            indexing_status['status'] = 'ready'
-            indexing_status['docs_indexed'] = len(document_info)
-            indexing_status['words_indexed'] = len(inverted_index)
-            indexing_status['message'] = f"✓ Ready! {len(inverted_index)} words, {len(document_info)} documents"
-            print(f"✓ Index loaded from cache: {indexing_status['message']}")
-            return
-    
-    # No indexes found - run crawler
-    indexing_status['status'] = 'indexing'
-    indexing_status['message'] = 'Crawling and indexing (running in background)...'
-    
-    print("\n🤖 No indexes found - Starting crawler in BACKGROUND MODE")
-    print("🚀 Server starting immediately - indexing happens live!\n")
-    
-    if run_crawler():
-        # Crawler finished - reload indexes
-        inverted_index = load_inverted_index(idx_file)
-        document_info = load_document_info(doc_file)
-        
-        if inverted_index and document_info:
-            indexing_status['status'] = 'ready'
-            indexing_status['docs_indexed'] = len(document_info)
-            indexing_status['words_indexed'] = len(inverted_index)
-            indexing_status['message'] = f"✓ Ready! {len(inverted_index)} words, {len(document_info)} documents"
-            print(f"\n✅ INDEXING COMPLETE: {indexing_status['message']}")
-        else:
-            indexing_status['status'] = 'error'
-            indexing_status['message'] = 'Failed to load indexes after crawling'
-            print(f"\n❌ {indexing_status['message']}")
-    else:
-        indexing_status['status'] = 'error'
-        indexing_status['message'] = 'Crawler failed'
-        print(f"\n❌ {indexing_status['message']}")
+    active_configs = manager.start_all()
 
-# Auto-setup VPN proxies if available
-print("\n🔐 VPN SETUP")
-print("=" * 50)
-auto_setup_vpn()
+    if not active_configs:
+        runtime_state["vpn_manager"] = None
+        print("VPN startup did not produce an active tunnel.")
+        return False
 
-# Start indexing in background thread immediately
-indexing_thread = threading.Thread(target=background_indexing, daemon=True)
-indexing_thread.start()
-print("📚 Started background indexing thread...")
+    manager.start_monitoring()
+    proxy_list = manager.generate_proxy_list()
+    if not proxy_list:
+        runtime_state["vpn_manager"] = None
+        print("VPN tunnels started, but no local tunnel-bound proxies could be created.")
+        return False
 
-# Serve the main index.html
-@app.route('/')
-def serve_index():
-    return send_from_directory('public', 'index.html')
+    options["use_proxy"] = True
+    options["proxy_list"] = proxy_list
+    print(f"Active VPN tunnels: {', '.join(active_configs)}")
+    print("Crawler requests will rotate across the active VPN-bound local proxies.")
+    for proxy in proxy_list.split("|"):
+        print(f"  {proxy}")
+    return True
 
-# Serve search.html
-@app.route('/search.html')
-def serve_search():
-    return send_from_directory('public', 'search.html')
 
-@app.route('/search')
-def search_api():
-    global inverted_index, document_info, indexing_status
-    
-    query = request.args.get('q', '')
-    num_results = int(request.args.get('num_results', 10))
-    page = int(request.args.get('page', 1))
-    
-    # Log search request
-    print(f"\n🔍 SEARCH REQUEST: '{query}' (page {page})")
-    
-    if not query:
-        print(f"   ✗ Empty query")
-        return jsonify({'error': 'No query provided'}), 400
-    
-    # Check if indexing is complete
-    if indexing_status['status'] != 'ready':
-        print(f"   ⏳ Indexing in progress...")
-        return jsonify({
-            'error': 'Search index not ready yet',
-            'message': indexing_status['message'],
-            'status': indexing_status['status'],
-            'docs_indexed': indexing_status['docs_indexed'],
-            'words_indexed': indexing_status['words_indexed'],
-            'query': query,
-            'results': []
-        }), 202  # 202 = Accepted (processing)
-    
-    # Perform search
-    if not inverted_index or not document_info:
-        print(f"   ✗ Index not available")
-        return jsonify({
-            'error': 'Search index not available',
-            'query': query,
-            'results': []
-        }), 503
-    
-    print(f"   Searching {len(inverted_index)} words, {len(document_info)} documents")
-    results = search(query, inverted_index, document_info, num_results=num_results, page=page)
-    print(f"   ✓ Found {len(results)} results")
-    
-    return jsonify({
-        'query': query,
-        'page': page,
-        'num_results': num_results,
-        'results': results
-    })
+def handle_crawler_status(event):
+    with index_lock:
+        has_searchable_index = bool(inverted_index and document_info)
+    with status_lock:
+        current_status = dict(indexing_status)
 
-@app.route('/status')
-def status_api():
-    """Get current indexing status (live progress)"""
-    return jsonify(indexing_status)
+    requested_state = event.get("state", "indexing")
+    effective_state = requested_state
+    if requested_state == "indexing" and has_searchable_index:
+        effective_state = "refreshing"
+    elif requested_state == "stopped" and has_searchable_index:
+        effective_state = "ready"
 
-if __name__ == '__main__':
-    # Get server settings from config
+    update_status(
+        status=effective_state,
+        message=event.get("message", current_status["message"]),
+        crawl_count=event.get("crawl_count", current_status["crawl_count"]),
+        queue_size=event.get("queue_size", current_status["queue_size"]),
+        last_saved_count=event.get("last_saved_count", current_status["last_saved_count"]),
+        last_saved_at=event.get("last_saved_at", current_status["last_saved_at"]),
+        continuous_mode=event.get("continuous_mode", current_status["continuous_mode"]),
+        save_every=event.get("save_every", current_status["save_every"]),
+        docs_indexed=event.get("docs_indexed", current_status["docs_indexed"]),
+        words_indexed=event.get("words_indexed", current_status["words_indexed"]),
+    )
+
+
+def handle_crawler_save(event):
+    message = (
+        f"Live index refreshed after {event['crawl_count']} crawled pages "
+        f"at {event['saved_at']}."
+    )
+    if not load_indexes_into_memory(message=message, status="ready"):
+        update_status(status="error", message="Crawler saved files, but the server could not reload them.")
+
+
+def run_crawler_in_background(options):
     try:
-        host = CONFIG.get('Server', 'host', fallback='0.0.0.0')
-        port = CONFIG.getint('Server', 'port', fallback=5000)
-        debug = CONFIG.getboolean('Server', 'debug', fallback=True)
-    except:
-        host = '0.0.0.0'
-        port = 5000
-        debug = True
-    
-    print(f"\n" + "="*50)
-    print(f"🚀 AURORA SEARCH SERVER - PARALLEL MODE")
-    print(f"="*50)
-    print(f"   🌐 URL: http://localhost:{port}")
-    print(f"   📡 Host: {host}:{port}")
-    print(f"   🔧 Debug: {debug}")
-    print(f"   ⏳ Status API: http://localhost:{port}/status")
-    print(f"\n⚡ Server LIVE with background indexing...")
-    print(f"   🤖 Crawler running in BACKGROUND")
-    print(f"   🔄 Everything parallel (like Google!)")
-    print(f"   📊 Check /status endpoint to see progress")
-    print(f"="*50 + "\n")
-    
-    app.run(host=host, port=port, debug=debug)
+        runtime_options = {
+            "save_every": options["reindex_every"],
+            "continuous": options["continuous_crawl"],
+            "use_proxy": options["use_proxy"],
+            "proxy_list": options.get("proxy_list", ""),
+        }
+
+        run_crawler_service(
+            config=load_crawler_config(),
+            runtime_options=runtime_options,
+            log_callback=print,
+            status_callback=handle_crawler_status,
+            save_callback=handle_crawler_save,
+            stop_event=runtime_state["crawler_stop_event"],
+        )
+    except Exception as exc:
+        print(f"Crawler crashed: {exc}")
+        update_status(status="error", message=f"Crawler crashed: {exc}")
+
+
+def initialize_runtime(options):
+    with runtime_lock:
+        if runtime_state["initialized"]:
+            return
+        runtime_state["initialized"] = True
+        runtime_state["startup_options"] = dict(options)
+
+    if load_indexes_into_memory(message="Loaded cached index from disk.", status="ready"):
+        print("Cached search index loaded.")
+    else:
+        update_status(status="indexing", message="Waiting for the crawler to produce the first live index.")
+
+    if options["start_vpn"] and not start_vpn_if_requested(options):
+        update_status(
+            status="error",
+            message="VPN was required but no active VPN tunnels could be started.",
+            continuous_mode=False,
+            save_every=options["reindex_every"],
+        )
+        return False
+
+    if not options["start_crawler"]:
+        update_status(
+            status="ready" if inverted_index and document_info else "idle",
+            message="Crawler startup skipped." if inverted_index and document_info else "Crawler is disabled.",
+            continuous_mode=False,
+            save_every=options["reindex_every"],
+        )
+        return True
+
+    if inverted_index and document_info:
+        update_status(
+            status="refreshing",
+            message="Cached index loaded. Fresh crawl is running in the background.",
+            continuous_mode=options["continuous_crawl"],
+            save_every=options["reindex_every"],
+        )
+    else:
+        update_status(
+            status="indexing",
+            message="SircoAuroraBot is building the first live index.",
+            continuous_mode=options["continuous_crawl"],
+            save_every=options["reindex_every"],
+        )
+
+    runtime_state["crawler_stop_event"] = threading.Event()
+    runtime_state["crawler_thread"] = threading.Thread(
+        target=run_crawler_in_background,
+        args=(options,),
+        daemon=False,
+    )
+    runtime_state["crawler_thread"].start()
+    print("SircoAuroraBot background crawl thread started.")
+    return True
+
+
+def perform_runtime_shutdown(reason="Safe stop requested"):
+    stop_event = runtime_state.get("crawler_stop_event")
+    if stop_event:
+        stop_event.set()
+
+    server = runtime_state.get("server")
+    if server is not None:
+        try:
+            server.shutdown()
+        except Exception:
+            pass
+
+    crawler_thread = runtime_state.get("crawler_thread")
+    if crawler_thread and crawler_thread.is_alive():
+        crawler_thread.join(timeout=20)
+
+    vpn_manager = runtime_state.get("vpn_manager")
+    if vpn_manager:
+        vpn_manager.stop_all_vpns()
+
+    runtime_state["shutdown_complete"] = True
+    update_status(status="stopped", message=reason)
+
+
+def initiate_safe_stop(reason):
+    with runtime_lock:
+        if runtime_state["shutdown_started"]:
+            return
+        runtime_state["shutdown_started"] = True
+
+    print("\nStarting safe stop. Waiting for SircoAuroraBot to finish in-flight work and save...")
+    update_status(status="stopping", message=reason)
+    shutdown_thread = threading.Thread(
+        target=perform_runtime_shutdown,
+        args=(reason,),
+        daemon=True,
+    )
+    shutdown_thread.start()
+
+
+def handle_interrupt(signum, frame):
+    initiate_safe_stop("Safe stop requested by Ctrl+C.")
+
+
+def shutdown_runtime():
+    if runtime_state.get("shutdown_complete"):
+        return
+    perform_runtime_shutdown("Runtime shutdown requested.")
+
+
+atexit.register(shutdown_runtime)
+
+
+@app.route("/")
+def serve_index():
+    return send_from_directory("public", "index.html")
+
+
+@app.route("/search.html")
+def serve_search():
+    return send_from_directory("public", "search.html")
+
+
+@app.route("/search")
+def search_api():
+    query = request.args.get("q", "")
+    default_results = CONFIG.getint("Server", "results_per_page", fallback=10)
+    num_results = int(request.args.get("num_results", default_results))
+    page = int(request.args.get("page", 1))
+
+    print(f"\nSEARCH REQUEST: '{query}' (page {page})")
+    if not query:
+        return jsonify({"error": "No query provided"}), 400
+
+    with index_lock:
+        current_index = inverted_index
+        current_docs = document_info
+
+    with status_lock:
+        current_status = dict(indexing_status)
+
+    if not current_index or not current_docs:
+        return (
+            jsonify(
+                {
+                    "error": "Search index not ready yet",
+                    "message": current_status["message"],
+                    "status": current_status["status"],
+                    "docs_indexed": current_status["docs_indexed"],
+                    "words_indexed": current_status["words_indexed"],
+                    "query": query,
+                    "results": [],
+                }
+            ),
+            202,
+        )
+
+    results = search(query, current_index, current_docs, num_results=num_results, page=page)
+    return jsonify(
+        {
+            "query": query,
+            "page": page,
+            "num_results": num_results,
+            "status": current_status["status"],
+            "results": results,
+        }
+    )
+
+
+@app.route("/status")
+def status_api():
+    with status_lock:
+        return jsonify(dict(indexing_status))
+
+
+if __name__ == "__main__":
+    signal.signal(signal.SIGINT, handle_interrupt)
+    signal.signal(signal.SIGTERM, handle_interrupt)
+
+    startup_options = collect_startup_options()
+    print_startup_summary(startup_options)
+    initialized = initialize_runtime(startup_options)
+    if not initialized:
+        print("Startup stopped because no working VPN tunnels were available.")
+        sys.exit(1)
+
+    host = CONFIG.get("Server", "host", fallback="0.0.0.0")
+    port = CONFIG.getint("Server", "port", fallback=5000)
+    debug = CONFIG.getboolean("Server", "debug", fallback=True)
+
+    print("\n" + "=" * 50)
+    print("AURORA SEARCH SERVER")
+    print("=" * 50)
+    print(f"URL: http://localhost:{port}")
+    print(f"Host binding: {host}:{port}")
+    print(f"Debug mode: {debug}")
+    print(f"Status API: http://localhost:{port}/status")
+    print("SircoAuroraBot logs will stream in this terminal while the server is running.")
+    print("=" * 50 + "\n")
+
+    server = make_server(host, port, app)
+    runtime_state["server"] = server
+
+    try:
+        server.serve_forever()
+    finally:
+        if not runtime_state.get("shutdown_started"):
+            initiate_safe_stop("Server loop exited.")

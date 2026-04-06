@@ -6,6 +6,8 @@ def compute_pagerank(graph, damping_factor=0.85, max_iterations=100, tol=1.0e-6)
     for links in graph.values():
         all_nodes.update(links)
     num_nodes = len(all_nodes)
+    if num_nodes == 0:
+        return {}
     # Initialize PageRank scores
     pagerank = {url: 1.0 / num_nodes for url in all_nodes}
     # Identify dangling nodes (nodes with no outgoing links)

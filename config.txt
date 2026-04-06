@@ -3,7 +3,7 @@
 
 [Crawler]
 # Crawler name/session identifier
-crawler_name = Auroracrawler
+crawler_name = SircoAuroraBot
 # Maximum number of URLs to crawl (0 = unlimited, stopped by max_file_size)
 crawl_limit = 100000
 # Number of concurrent worker threads
@@ -13,6 +13,82 @@ request_timeout = 15
 # Delay between requests (random range: min_delay to max_delay) - be respectful to servers
 min_delay = 3
 max_delay = 8
+# Optional custom seed list. Leave blank to use Aurora Search's built-in broad web seed set.
+seed_urls =
+    https://www.wikipedia.org
+    https://en.wikipedia.org/wiki/Main_Page
+    https://www.wikidata.org
+    https://www.reddit.com
+    https://news.ycombinator.com
+    https://www.quora.com
+    https://stackexchange.com
+    https://www.bbc.com
+    https://www.cnn.com
+    https://www.nytimes.com
+    https://www.theguardian.com
+    https://www.reuters.com
+    https://apnews.com
+    https://www.aljazeera.com
+    https://www.npr.org
+    https://abcnews.go.com
+    https://www.foxnews.com
+    https://github.com
+    https://gitlab.com
+    https://stackoverflow.com
+    https://superuser.com
+    https://serverfault.com
+    https://dev.to
+    https://hashnode.com
+    https://medium.com
+    https://arxiv.org
+    https://scholar.google.com
+    https://www.khanacademy.org
+    https://ocw.mit.edu
+    https://plato.stanford.edu
+    https://www.britannica.com
+    https://www.yelp.com
+    https://www.tripadvisor.com
+    https://www.yellowpages.com
+    https://www.angi.com
+    https://www.crunchbase.com
+    https://www.amazon.com
+    https://www.ebay.com
+    https://www.walmart.com
+    https://www.target.com
+    https://www.bestbuy.com
+    https://www.etsy.com
+    https://www.youtube.com
+    https://vimeo.com
+    https://soundcloud.com
+    https://www.twitch.tv
+    https://wordpress.com
+    https://blogger.com
+    https://tumblr.com
+    https://substack.com
+    https://www.usa.gov
+    https://www.data.gov
+    https://www.nasa.gov
+    https://www.census.gov
+    https://www.loc.gov
+    https://www.baidu.com
+    https://www.yandex.ru
+    https://www.naver.com
+    https://www.yahoo.co.jp
+    https://www.bbc.co.uk
+    https://www.lemonde.fr
+    https://www.spiegel.de
+    https://en.wikipedia.org/wiki/Special:AllPages
+    https://en.wikipedia.org/wiki/Special:Random
+    https://www.reddit.com/r/all
+    https://news.ycombinator.com/newest
+# Query params to strip during URL normalization
+tracking_query_prefixes = utm_|mc_
+# Exact query params to strip during URL normalization
+tracking_query_keys = fbclid|gclid|igshid|msclkid|phpsessid|ref|ref_src|session|sessionid|sid|source
+# Low-value or action-oriented paths to skip
+action_path_keywords = /login|/logout|/signin|/sign-in|/signup|/sign-up|/register|/vote|/hide|/reply|/submit|/cart|/checkout
+# Sitemap locations to probe for each domain
+sitemap_candidate_paths = /sitemap.xml|/sitemap_index.xml|/sitemap-index.xml|/sitemap1.xml|/post-sitemap.xml|/page-sitemap.xml|/category-sitemap.xml|/tag-sitemap.xml|/news-sitemap.xml|/video-sitemap.xml|/image-sitemap.xml|/api/sitemap.xml|/sitemap.txt|/sitemap|/site-map
 
 [Indexing]
 # Maximum description length (in characters)
@@ -25,12 +101,8 @@ max_words_per_page = 1000
 [Data]
 # Maximum total data size in MB for the entire crawl (20GB max)
 max_total_size_mb = 20480
-# Maximum file size in MB for individual compressed index files
+# Maximum file size in MB for each generated crawl file (index, docs, state)
 max_file_size = 2048
-# Enable compression (true/false)
-enable_compression = true
-# Compression format (gzip/bz2)
-compression_format = gzip
 
 [PageRank]
 # Damping factor (0.0 to 1.0, typically 0.85 for production)
@@ -57,6 +129,10 @@ auto_run_crawler = true
 parallel_mode = true
 # Maximum startup time in seconds (0 = no limit)
 startup_timeout = 300
+# Keep crawling while the server stays up
+continuous_crawl = true
+# Save and refresh the search index after this many crawled pages
+reindex_every_pages = 30
 
 [Proxy]
 # Enable proxy rotation for crawler requests

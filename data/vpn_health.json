@@ -1,0 +1,65 @@
+{
+  "vpngate_114.173.34.110_tcp_1857.ovpn": {
+    "failure_count": 4,
+    "last_checked_at": "2026-04-06 16:20:07",
+    "last_detail": "did not become active before the startup wait expired",
+    "last_outcome": "unknown_failure",
+    "success_count": 0
+  },
+  "vpngate_126.51.77.129_tcp_1540.ovpn": {
+    "failure_count": 4,
+    "last_checked_at": "2026-04-06 16:17:42",
+    "last_detail": "did not become active before the startup wait expired",
+    "last_outcome": "unknown_failure",
+    "success_count": 0
+  },
+  "vpngate_133.32.181.46_udp_3238.ovpn": {
+    "failure_count": 4,
+    "last_checked_at": "2026-04-06 16:18:55",
+    "last_detail": "did not become active before the startup wait expired",
+    "last_outcome": "unknown_failure",
+    "success_count": 0
+  },
+  "vpngate_184.22.100.207_udp_1981.ovpn": {
+    "failure_count": 4,
+    "last_checked_at": "2026-04-06 16:18:18",
+    "last_detail": "did not become active before the startup wait expired",
+    "last_outcome": "unknown_failure",
+    "success_count": 0
+  },
+  "vpngate_23.95.199.231_tcp_995.ovpn": {
+    "failure_count": 7,
+    "last_checked_at": "2026-04-06 16:17:06",
+    "last_detail": "did not become active before the startup wait expired",
+    "last_outcome": "unknown_failure",
+    "success_count": 1
+  },
+  "vpngate_49.251.118.159_tcp_1870.ovpn": {
+    "failure_count": 3,
+    "last_checked_at": "2026-04-06 16:19:31",
+    "last_detail": "did not become active before the startup wait expired",
+    "last_outcome": "unknown_failure",
+    "success_count": 0
+  },
+  "vpngate_60.124.39.90_tcp_1384.ovpn": {
+    "failure_count": 2,
+    "last_checked_at": "2026-04-06 16:21:19",
+    "last_detail": "did not become active before the startup wait expired",
+    "last_outcome": "unknown_failure",
+    "success_count": 0
+  },
+  "vpngate_60.127.61.103_tcp_1827.ovpn": {
+    "failure_count": 3,
+    "last_checked_at": "2026-04-06 16:21:55",
+    "last_detail": "did not become active before the startup wait expired",
+    "last_outcome": "unknown_failure",
+    "success_count": 0
+  },
+  "vpngate_69.140.113.193_tcp_1491.ovpn": {
+    "failure_count": 5,
+    "last_checked_at": "2026-04-06 16:20:43",
+    "last_detail": "did not become active before the startup wait expired",
+    "last_outcome": "unknown_failure",
+    "success_count": 0
+  }
+}

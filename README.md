@@ -49,7 +49,7 @@ pip install -r requirements.txt
 - You can start the process by running:
 
 ```sh
-python search/complete_examples/advanced_pagerank.py
+python3 app.py
 ```
 
 - This will crawl, index, and prepare the content for searching.
@@ -90,11 +90,11 @@ python search/<path to file you want to run>
 
 - **PageRank Algorithm**: The implementation of the PageRank algorithm uses an iterative approach to rank pages based on the links.
 
-- **Data Storage**: The crawler and indexer use CSV files for data storage (`advanced_pagerank_inverted_index.csv` and `advanced_pagerank.csv`). Make sure these files are writable during execution.
+- **Data Storage**: Aurora Search stores its live search data in JSON files such as `data/inverted_index.json`, `data/doc_info.json`, and `data/crawl_state.json`. Make sure these files are writable during execution.
 
 ## Contributing
 
-Contributions are welcome! If you'd like to contribute to the development of Sloth Search, feel free to fork the repository, make changes, and submit a pull request.
+Contributions are welcome! If you'd like to contribute to the development of Aurora Search, feel free to fork the repository, make changes, and submit a pull request.
 
 ## License
 
@@ -102,4 +102,4 @@ This project is open-source and available under the MIT License.
 
 If you have any questions or suggestions, feel free to contact me.
 
-Happy Searching with Sloth Search! 🦥🔍
+Happy Searching with Aurora Search!

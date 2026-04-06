@@ -4,9 +4,11 @@
 
 # GENERATED DATA (Never commit these)
 /data/                          # All crawled data and indexes
-*.json.gz                       # Compressed index files
-advanced_inverted_index.*       # Generated inverted index
-advanced_doc_info.*             # Generated document info
+inverted_index.json             # Generated inverted index
+doc_info.json                   # Generated document info
+inverted_index.*                # Generated inverted index
+doc_info.*                      # Generated document info
+ovpn/
 
 # PYTHON CACHE & ARTIFACTS
 __pycache__/                    # Python cache

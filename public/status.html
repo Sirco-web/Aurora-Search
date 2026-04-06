@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Aurora Search Status</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body class="status-page">
+    <main class="status-shell">
+      <header class="status-header">
+        <div>
+          <p class="status-kicker">Aurora Search</p>
+          <h1>Status</h1>
+        </div>
+        <nav class="status-nav">
+          <a href="index.html">Search</a>
+          <a href="search.html">Results</a>
+        </nav>
+      </header>
+
+      <section class="status-grid">
+        <article class="status-card">
+          <p class="status-title">Crawler State</p>
+          <p class="status-value" id="crawler-status">Loading...</p>
+        </article>
+        <article class="status-card">
+          <p class="status-title">Indexed Docs</p>
+          <p class="status-value" id="docs-count">0</p>
+        </article>
+        <article class="status-card">
+          <p class="status-title">Indexed Terms</p>
+          <p class="status-value" id="terms-count">0</p>
+        </article>
+        <article class="status-card">
+          <p class="status-title">Queue Size</p>
+          <p class="status-value" id="queue-count">0</p>
+        </article>
+      </section>
+
+      <section class="status-panel">
+        <div class="status-copy">
+          <h2>Live crawl details</h2>
+          <p id="status-message">Checking crawler status...</p>
+        </div>
+
+        <dl class="status-facts">
+          <div>
+            <dt>Last save</dt>
+            <dd id="saved-at">Not yet</dd>
+          </div>
+          <div>
+            <dt>Saved crawl count</dt>
+            <dd id="saved-count">0</dd>
+          </div>
+          <div>
+            <dt>Continuous crawl</dt>
+            <dd id="continuous-mode">Unknown</dd>
+          </div>
+          <div>
+            <dt>Reindex every</dt>
+            <dd id="save-every">0</dd>
+          </div>
+        </dl>
+      </section>
+    </main>
+
+    <script>
+      async function updateStatus() {
+        try {
+          const response = await fetch('/status');
+          const data = await response.json();
+
+          document.getElementById('crawler-status').textContent = data.status || 'unknown';
+          document.getElementById('docs-count').textContent = data.docs_indexed || 0;
+          document.getElementById('terms-count').textContent = data.words_indexed || 0;
+          document.getElementById('queue-count').textContent = data.queue_size || 0;
+          document.getElementById('status-message').textContent = data.message || 'Aurora Search is warming up.';
+          document.getElementById('saved-at').textContent = data.last_saved_at || 'Not yet';
+          document.getElementById('saved-count').textContent = data.last_saved_count || 0;
+          document.getElementById('continuous-mode').textContent = data.continuous_mode ? 'Enabled' : 'Disabled';
+          document.getElementById('save-every').textContent = `${data.save_every || 0} pages`;
+        } catch (error) {
+          document.getElementById('status-message').textContent = 'Could not reach the Aurora Search status API.';
+        }
+      }
+
+      updateStatus();
+      setInterval(updateStatus, 3000);
+    </script>
+  </body>
+</html>

@@ -15,7 +15,7 @@ import os
 def load_config():
     """Load config.txt"""
     config = configparser.ConfigParser()
-    config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.txt')
+    config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'config.txt')
     if os.path.exists(config_path):
         config.read(config_path)
     return config, config_path
@@ -58,10 +58,9 @@ def show_proxy_types():
    - Format: http://user:pass@proxy-service.com:PORT
 
 6. 🔐 OpenVPN Connections (NEW!)
-   - Use free OpenVPN configs from GitHub
-   - Run multiple VPN connections in parallel
-   - Download configs and start VPN manager
-   - Format: socks5://127.0.0.1:PORT (automatically routed)
+   - Use local OpenVPN configs to start a tunnel before crawling
+   - Managed by the server startup prompts or vpn-manager.py
+   - This is a system route, not a proxy_list entry
 """)
 
 def setup_cloudflare():
@@ -169,56 +168,15 @@ def setup_openvpn():
     print("""
 🔐 OPENVPN SETUP:
 
-Free OpenVPN configs from GitHub:
-  ✓ Zoult .ovpn repository (USA configs)
-  ✓ DesertSun35 Free OpenVPN Configs
-  ✓ VPNBook (free tier, limited servers)
+OpenVPN is now started directly by the server startup flow.
 
-How it works:
-  1. Download OpenVPN configs from GitHub
-  2. Run VPN manager to start all connections
-  3. Each VPN gets SOCKS5 proxy on localhost:PORT
-  4. Crawler rotates through active VPNs
+Recommended steps:
+  1. python3 scripts/download-vpn-configs.py
+  2. python3 app.py
+  3. Answer "yes" when the server asks whether it should start a VPN tunnel
 
-⚠️  Requires:
-  - OpenVPN client installed (apt install openvpn)
-  - Active internet connection
-  - Some configs may require auth
-
-Setup steps:
-  1. python3 download-vpn-configs.py
-  2. python3 vpn-manager.py
-  3. Note the proxy URLs shown
-  4. Paste them here OR let Aurora auto-detect
-
-Auto-detect active VPNs? (y/n):
+OpenVPN tunnels are not added to proxy_list, so there is nothing to save here.
 """)
-    
-    choice = input("").strip().lower()
-    if choice == 'y':
-        print("""
-✅ Aurora will auto-detect active VPNs from:
-   /data/vpn_configs/
-   localhost:1090-1099
-
-Make sure VPN manager is running:
-   python3 vpn-manager.py
-
-Leaving proxy_list empty - Aurora will detect automatically
-""")
-        return 'auto'
-    
-    # Manual entry
-    vpn_proxies = input("🔗 VPN Proxy URLs (socks5://..., space or pipe separated): ").strip()
-    if not vpn_proxies:
-        print("⏭️  Skipped OpenVPN setup.")
-        return None
-    
-    # Normalize separators
-    proxies = vpn_proxies.replace('|', ' ').split()
-    if proxies:
-        print(f"✅ Added {len(proxies)} VPN proxies")
-        return '|'.join(proxies)
     return None
 
 def save_config(config, config_path, proxies_list, use_proxy):
@@ -282,29 +240,8 @@ def main():
     
     elif choice == '6':
         print("\n🔐 OPENVPN SETUP")
-        print("\nTo use OpenVPN proxies:\n")
-        use_vpn = input("(1) Download VPN configs and (2) Run VPN manager first\nContinue? (y/n): ").strip().lower()
-        
-        if use_vpn == 'y':
-            proxy = setup_openvpn()
-            if proxy:
-                proxies.append(proxy)
-        else:
-            print("""
-📝 SETUP COMMANDS:
-
-# Step 1: Download free VPN configs from GitHub
-python3 download-vpn-configs.py
-
-# Step 2: Start VPN manager (keeps VPNs running)
-python3 vpn-manager.py
-
-# Step 3: Configure proxies (this script)
-python3 setup-proxies.py
-
-# Step 4: Run crawler
-python3 app.py
-""")
+        setup_openvpn()
+        return
     
     else:
         print("❌ Skipped proxy setup")
