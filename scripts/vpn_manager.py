@@ -782,10 +782,6 @@ class VPNManager:
             pid_path,
             "--script-security",
             "2",
-            "--up",
-            "up",
-            "--down",
-            "down",
         ]
         cmd.extend(self.compatibility_args(config_file))
         cmd.extend(["--data-ciphers", self.preferred_data_ciphers(config_file)])
