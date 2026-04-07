@@ -101,6 +101,9 @@ from werkzeug.serving import make_server
 
 from scripts.crawler import load_config as load_crawler_config
 from scripts.crawler import run_crawler_service
+from scripts.panda import score_content_quality
+from scripts.penguin import score_link_quality
+from scripts.ranking import rank_results, explain_ranking, calculate_combined_rank
 
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(ROOT_DIR, "data")
@@ -218,6 +221,8 @@ def load_document_info(file_path):
                     "title": info["title"],
                     "description": info["description"],
                     "pagerank": float(info.get("pagerank", 0)),
+                    "panda_score": float(info.get("panda_score", 0.5)),
+                    "penguin_score": float(info.get("penguin_score", 0.5)),
                 }
     except FileNotFoundError:
         return {}
@@ -262,6 +267,85 @@ def parse_query(query):
     return [ps.stem(word) for word in tokens if word.isalpha() and word not in stop_words]
 
 
+def calculate_relevance_score(query_words, doc_text, title, description, url=""):
+    """
+    Calculate strict TF-IDF-inspired relevance score for a document.
+    ONLY ranks pages that actually contain the query terms.
+    
+    Heavily penalizes:
+    - Homepage/index pages
+    - Pages without query terms in title/description
+    - Generic news site homepages
+    """
+    if not query_words:
+        return 0.0
+    
+    import re
+    
+    # Normalize all text
+    title_lower = (title or "").lower()
+    desc_lower = (description or "").lower()
+    doc_lower = (doc_text or "").lower()
+    url_lower = (url or "").lower()
+    
+    # HARD FILTER: Is this a homepage/index page?
+    homepage_indicators = [
+        "homepage",
+        "index",
+        "home page",
+        "news.ycombinator",
+        "news | hacker",
+        "new comments",
+        "latest news",
+        "breaking news",
+        "world news",
+        "current news",
+    ]
+    
+    is_homepage = any(indicator in desc_lower for indicator in homepage_indicators)
+    is_homepage = is_homepage or any(indicator in title_lower for indicator in homepage_indicators)
+    
+    # Generic news site homepages - check description length
+    if len(desc_lower.split()) < 10:  # Very short description = likely homepage
+        is_homepage = True
+    
+    if is_homepage:
+        return 0.0  # ZERO score for homepages
+    
+    # Count term occurrences using word boundaries (not substring)
+    word_pattern = r'\b(' + "|".join(re.escape(w) for w in query_words) + r')\b'
+    
+    title_matches = len(re.findall(word_pattern, title_lower))
+    desc_matches = len(re.findall(word_pattern, desc_lower))
+    content_matches = len(re.findall(word_pattern, doc_lower))
+    
+    # HARD FILTER: If query terms not in title or description, heavily penalize
+    if title_matches == 0 and desc_matches == 0:
+        # Query term not in title or description - this is not a relevant result
+        # Only give it credit if it appears many times in content
+        if content_matches < 3:
+            return 0.0  # Not relevant at all
+        # If it appears many times in content, give it minimal score
+        return 0.15
+    
+    # Calculate score: title > description > content
+    score = (
+        (title_matches * 8.0) +     # Title match is excellent signal
+        (desc_matches * 3.0) +      # Description match is good signal
+        (content_matches * 1.0)     # Content match is weak signal
+    )
+    
+    # Normalize with log scale
+    import math
+    if score == 0:
+        relevance = 0.0
+    else:
+        # log(1 + score) normalized to 0-1 range
+        relevance = min(1.0, math.log(1 + score) / math.log(15))
+    
+    return round(relevance, 4)
+
+
 def search(query, current_index, current_docs, num_results=10, page=1):
     query_words = parse_query(query)
     if not query_words:
@@ -280,6 +364,17 @@ def search(query, current_index, current_docs, num_results=10, page=1):
         info = current_docs.get(doc_id)
         if not info:
             continue
+        
+        # Calculate how well this document matches the query
+        full_text = f"{info.get('title', '')} {info.get('description', '')} {info.get('content', '')}"
+        relevance_score = calculate_relevance_score(
+            query_words, 
+            full_text, 
+            info.get('title', ''), 
+            info.get('description', ''),
+            info.get('url', '')
+        )
+        
         results.append(
             {
                 "doc_id": doc_id,
@@ -287,85 +382,98 @@ def search(query, current_index, current_docs, num_results=10, page=1):
                 "title": info["title"],
                 "description": info["description"],
                 "pagerank": info["pagerank"],
+                "panda_score": info.get("panda_score", 0.5),
+                "penguin_score": info.get("penguin_score", 0.5),
+                "relevance_score": relevance_score,  # NEW: Query relevance
             }
         )
 
-    sorted_results = sorted(results, key=lambda item: item["pagerank"], reverse=True)
+    # Use unified ranking algorithm combining PageRank, Panda, Penguin, AND Relevance
+    # 'relevance_first' strategy emphasizes matching the query over just link/content metrics
+    ranked_results = rank_results(results, strategy='relevance_first')
+    
+    # Filter out completely irrelevant results (relevance_score = 0)
+    ranked_results = [r for r in ranked_results if r.get('relevance_score', 0.0) > 0.0]
+    
     start = (page - 1) * num_results
     end = start + num_results
-    return sorted_results[start:end]
-
-
-def prompt_yes_no(prompt, default):
-    if not sys.stdin.isatty():
-        return default
-
-    suffix = "Y/n" if default else "y/N"
-    answer = input(f"{prompt} [{suffix}]: ").strip().lower()
-    if not answer:
-        return default
-    return answer in {"y", "yes"}
-
-
-def prompt_int(prompt, default, minimum=1):
-    if not sys.stdin.isatty():
-        return default
-
-    answer = input(f"{prompt} [{default}]: ").strip()
-    if not answer:
-        return default
-    try:
-        value = int(answer)
-    except ValueError:
-        print(f"Using default value {default}.")
-        return default
-    return max(minimum, value)
+    return ranked_results[start:end]
 
 
 def collect_startup_options():
     configured_proxy_list = CONFIG.get("Proxy", "proxy_list", fallback="").strip()
-    proxy_default = CONFIG.getboolean("Proxy", "use_proxy", fallback=False) and bool(configured_proxy_list)
-    default_continuous = CONFIG.getboolean("Startup", "continuous_crawl", fallback=True)
     default_reindex_every = CONFIG.getint("Startup", "reindex_every_pages", fallback=30)
 
     options = {
-        "start_crawler": True,
-        "continuous_crawl": default_continuous,
+        "start_crawler": False,
+        "continuous_crawl": False,
         "reindex_every": default_reindex_every,
-        "use_proxy": proxy_default,
-        "proxy_list": configured_proxy_list,
+        "use_proxy": False,
+        "proxy_list": "",
         "start_vpn": False,
-        "start_all_vpns": True,
+        "start_all_vpns": False,
     }
 
     if not sys.stdin.isatty():
         return options
 
-    print("\nSERVER STARTUP QUESTIONS")
-    print("=" * 50)
-    options["start_crawler"] = prompt_yes_no("Start the crawler with the server?", True)
-    options["continuous_crawl"] = (
-        prompt_yes_no("Keep crawling while the server is running?", default_continuous)
-        if options["start_crawler"]
-        else False
-    )
-    options["reindex_every"] = (
-        prompt_int("Reindex after how many crawled pages?", default_reindex_every, minimum=1)
-        if options["start_crawler"]
-        else default_reindex_every
-    )
-    options["start_vpn"] = prompt_yes_no("Start all VPN tunnels before crawling?", False)
-    options["start_all_vpns"] = options["start_vpn"]
-    if options["start_vpn"]:
+    print("\n" + "=" * 60)
+    print("AURORA SEARCH - STARTUP MODE")
+    print("=" * 60)
+    print("\nChoose startup mode:\n")
+    print("  [1] SERVE ONLY - Just serve the index/search (no crawler, no VPN)")
+    print("  [2] SERVE + CRAWLER - Serve + continuous crawler (no VPN)")
+    print("  [3] SERVE + CRAWLER + VPN - Full setup with VPN tunnels\n")
+    
+    while True:
+        try:
+            choice = input("Enter your choice (1, 2, or 3): ").strip()
+            if choice in ["1", "2", "3"]:
+                break
+            print("Invalid choice. Please enter 1, 2, or 3.")
+        except EOFError:
+            # Non-interactive mode, default to option 1
+            choice = "1"
+            break
+
+    if choice == "1":
+        # SERVE ONLY
+        options["start_crawler"] = False
+        options["continuous_crawl"] = False
+        print("\n✓ Mode: SERVE ONLY")
+        print("  - Server will run on port 5000")
+        print("  - No crawler active")
+        print("  - Searching existing index only")
+        
+    elif choice == "2":
+        # SERVE + CRAWLER (no VPN)
+        options["start_crawler"] = True
+        options["continuous_crawl"] = True
+        options["reindex_every"] = default_reindex_every
+        options["use_proxy"] = False
+        print("\n✓ Mode: SERVE + CRAWLER")
+        print("  - Server will run on port 5000")
+        print("  - Crawler will run continuously")
+        print(f"  - Reindex every {default_reindex_every} pages")
+        print("  - No proxies (direct requests)")
+        
+    elif choice == "3":
+        # SERVE + CRAWLER + VPN
+        options["start_crawler"] = True
+        options["continuous_crawl"] = True
+        options["reindex_every"] = default_reindex_every
+        options["start_vpn"] = True
+        options["start_all_vpns"] = True
         options["use_proxy"] = True
         options["proxy_list"] = ""
-        print("VPN mode will start every working tunnel and rotate crawler requests across all active local proxies.")
-    else:
-        options["use_proxy"] = prompt_yes_no(
-            "Use proxy_list from config.txt for crawler requests?",
-            proxy_default,
-        )
-        options["proxy_list"] = configured_proxy_list if options["use_proxy"] else ""
+        print("\n✓ Mode: SERVE + CRAWLER + VPN")
+        print("  - Server will run on port 5000")
+        print("  - Crawler will run continuously")
+        print(f"  - Reindex every {default_reindex_every} pages")
+        print("  - VPN tunnels will start automatically")
+        print("  - Crawler will rotate through active VPN proxies")
+    
+    print("=" * 60)
     return options
 
 
@@ -651,6 +759,89 @@ def search_api():
     )
 
 
+@app.route("/ranking-info")
+def ranking_info_api():
+    """Return information about ranking algorithms used."""
+    return jsonify(
+        {
+            "algorithms": {
+                "pagerank": {
+                    "name": "PageRank",
+                    "description": "Measures link popularity and authority",
+                    "weight": 0.4,
+                    "range": "0.0 to 1.0 (normalized)",
+                },
+                "panda": {
+                    "name": "Panda Algorithm",
+                    "description": "Scores content quality based on depth, structure, originality, and readability",
+                    "weight": 0.35,
+                    "factors": [
+                        "Content length (thin content penalized)",
+                        "HTML structure (headings, paragraphs, lists)",
+                        "Readability (sentence/word length)",
+                        "Keyword stuffing detection",
+                        "Duplicate content detection",
+                        "Content freshness",
+                    ],
+                },
+                "penguin": {
+                    "name": "Penguin Algorithm",
+                    "description": "Scores link quality and trustworthiness",
+                    "weight": 0.15,
+                    "factors": [
+                        "Backlink count (logarithmic scale)",
+                        "Domain authority of linking sites",
+                        "Anchor text naturalness",
+                        "Link farm pattern detection",
+                    ],
+                },
+            },
+            "formula": "rank_score = (pagerank * 0.4) + (panda * 0.35) + (penguin * 0.15) + (relevance * 0.1)",
+            "quality_thresholds": {
+                "low_quality_content": "Panda < 0.3 reduces score by 70%",
+                "suspicious_links": "Penguin < 0.2 reduces score by 50%",
+                "high_quality_boost": "Panda > 0.8 AND Penguin > 0.8 boosts score by 20%",
+            },
+        }
+    )
+
+
+@app.route("/explain")
+def explain_ranking_api():
+    """Explain why a specific result ranked where it did."""
+    url = request.args.get("url", "")
+    if not url:
+        return jsonify({"error": "URL parameter required"}), 400
+
+    with index_lock:
+        current_docs = document_info
+
+    # Find the document
+    target_doc = None
+    for doc_id, info in current_docs.items():
+        if info["url"] == url:
+            target_doc = info
+            break
+
+    if not target_doc:
+        return jsonify({"error": "URL not found in index"}), 404
+
+    explanation = explain_ranking(target_doc)
+    return jsonify(
+        {
+            "url": url,
+            "title": target_doc.get("title"),
+            "explanation": explanation,
+            "scores": {
+                "pagerank": target_doc.get("pagerank", 0),
+                "panda": target_doc.get("panda_score", 0.5),
+                "penguin": target_doc.get("penguin_score", 0.5),
+                "rank_score": target_doc.get("rank_score", 0),
+            },
+        }
+    )
+
+
 @app.route("/status")
 def status_api():
     with status_lock:
@@ -678,6 +869,9 @@ if __name__ == "__main__":
     print(f"URL: http://localhost:{port}")
     print(f"Host binding: {host}:{port}")
     print(f"Debug mode: {debug}")
+    print(f"Search API: http://localhost:{port}/search?q=query")
+    print(f"Ranking Info: http://localhost:{port}/ranking-info")
+    print(f"Explain Rank: http://localhost:{port}/explain?url=https://...")
     print(f"Status API: http://localhost:{port}/status")
     print("SircoAuroraBot logs will stream in this terminal while the server is running.")
     print("=" * 50 + "\n")

@@ -6,6 +6,7 @@ import io
 import json
 import os
 import random
+import re
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -20,77 +21,109 @@ from bs4 import BeautifulSoup
 if __package__:
     from .indexing import index_page
     from .pagerank import compute_pagerank
+    from .panda import score_content_quality
+    from .penguin import score_link_quality
 else:
     from indexing import index_page
     from pagerank import compute_pagerank
+    from panda import score_content_quality
+    from penguin import score_link_quality
 
 DEFAULT_STARTING_URLS = [
-    "https://www.wikipedia.org",
+    # Wikipedia - tons of content, highly structured
     "https://en.wikipedia.org/wiki/Main_Page",
-    "https://www.wikidata.org",
-    "https://www.reddit.com",
-    "https://news.ycombinator.com",
-    "https://www.quora.com",
-    "https://stackexchange.com",
-    "https://www.bbc.com",
-    "https://www.cnn.com",
-    "https://www.nytimes.com",
-    "https://www.theguardian.com",
-    "https://www.reuters.com",
-    "https://apnews.com",
-    "https://www.aljazeera.com",
-    "https://www.npr.org",
-    "https://abcnews.go.com",
-    "https://www.foxnews.com",
-    "https://github.com",
-    "https://gitlab.com",
-    "https://stackoverflow.com",
-    "https://superuser.com",
-    "https://serverfault.com",
-    "https://dev.to",
-    "https://hashnode.com",
-    "https://medium.com",
-    "https://arxiv.org",
-    "https://scholar.google.com",
-    "https://www.khanacademy.org",
-    "https://ocw.mit.edu",
-    "https://plato.stanford.edu",
-    "https://www.britannica.com",
-    "https://www.yelp.com",
-    "https://www.tripadvisor.com",
-    "https://www.yellowpages.com",
-    "https://www.angi.com",
-    "https://www.crunchbase.com",
-    "https://www.amazon.com",
-    "https://www.ebay.com",
-    "https://www.walmart.com",
-    "https://www.target.com",
-    "https://www.bestbuy.com",
-    "https://www.etsy.com",
-    "https://www.youtube.com",
-    "https://vimeo.com",
-    "https://soundcloud.com",
-    "https://www.twitch.tv",
-    "https://wordpress.com",
-    "https://blogger.com",
-    "https://tumblr.com",
-    "https://substack.com",
+    "https://en.wikipedia.org/wiki/Special:Random",  # Random articles = diverse content
+    "https://en.wikipedia.org/w/api.php?action=query&list=random&rnnamespace=0&rnlimit=50&format=json",
+    
+    # Reddit - real user discussions about everything
+    "https://www.reddit.com/r/explainlikeimfive/",
+    "https://www.reddit.com/r/todayilearned/",
+    "https://www.reddit.com/r/AskReddit/",
+    "https://www.reddit.com/r/science/",
+    "https://www.reddit.com/r/technology/",
+    "https://www.reddit.com/r/news/",
+    "https://www.reddit.com/r/worldnews/",
+    "https://www.reddit.com/r/food/",  # For "egg" queries!
+    "https://www.reddit.com/r/recipes/",
+    "https://www.reddit.com/r/cooking/",
+    
+    # News with search/topic pages
+    "https://www.bbc.com/news",
+    "https://www.bbc.com/news/world",
+    "https://www.bbc.com/news/business",
+    "https://www.cnn.com/world",
+    "https://www.cnn.com/us",
+    "https://www.nytimes.com/section/world",
+    "https://www.theguardian.com/world",
+    
+    # Knowledge bases with deep content
+    "https://stackoverflow.com/questions/tagged/javascript",
+    "https://stackoverflow.com/questions/tagged/python",
+    "https://stackoverflow.com/questions/tagged/web-development",
+    "https://superuser.com/questions/tagged/windows",
+    "https://serverfault.com/questions/tagged/linux",
+    "https://dev.to/top/week",
+    "https://medium.com/tag/technology",
+    "https://medium.com/tag/science",
+    
+    # Reference & Learning
+    "https://www.britannica.com/browse",
+    "https://www.khanacademy.org/",
+    "https://plato.stanford.edu/",
+    "https://www.coursera.org/",
+    
+    # Tech & Development
+    "https://github.com/trending",
+    "https://github.com/topics",
+    "https://news.ycombinator.com/newest",
+    "https://news.ycombinator.com/best",
+    
+    # Q&A Sites
+    "https://www.quora.com/",
+    "https://stackexchange.com/sites",
+    
+    # Food/Cooking (for diverse content including "egg" queries)
+    "https://www.allrecipes.com/",
+    "https://www.foodnetwork.com/recipes",
+    "https://www.bonappetitmag.com/recipes",
+    "https://www.seriouseats.com/recipes",
+    
+    # Shopping/Product Info
+    "https://www.amazon.com/s?k=products&page=1",
+    "https://www.ebay.com/sch/i.html?",
+    
+    # Travel & Local
+    "https://www.tripadvisor.com/Attractions",
+    "https://www.yelp.com/search?find_desc=restaurants",
+    
+    # Video platforms for transcripts/descriptions
+    "https://www.youtube.com/feed/trending",
+    
+    # Academic/Research
+    "https://arxiv.org/list/cs/recent",
+    "https://scholar.google.com/",
+    
+    # News aggregators
+    "https://apnews.com/hub/",
+    "https://www.reuters.com/world",
+    "https://www.aljazeera.com/news",
+    "https://www.npr.org/sections/news/",
+    
+    # Government & Data sources
     "https://www.usa.gov",
     "https://www.data.gov",
     "https://www.nasa.gov",
     "https://www.census.gov",
     "https://www.loc.gov",
-    "https://www.baidu.com",
-    "https://www.yandex.ru",
-    "https://www.naver.com",
-    "https://www.yahoo.co.jp",
+    
+    # International sites & languages
     "https://www.bbc.co.uk",
     "https://www.lemonde.fr",
     "https://www.spiegel.de",
-    "https://en.wikipedia.org/wiki/Special:AllPages",
-    "https://en.wikipedia.org/wiki/Special:Random",
+    "https://substack.com",
+    
+    # More Reddit for diverse topics
     "https://www.reddit.com/r/all",
-    "https://news.ycombinator.com/newest",
 ]
 
 DEFAULT_TRACKING_QUERY_PREFIXES = [
@@ -211,11 +244,27 @@ class CrawlerService:
         seed_urls = self.runtime_options.get("seed_urls")
         self.starting_urls = seed_urls or self._load_seed_urls()
 
+        # DEPTH & BREADTH CONTROLS (for better crawling)
+        self.max_pages_per_domain = max(1, self._resolve_int("Crawler", "max_pages_per_domain", 200))
+        self.max_crawl_depth = max(0, self._resolve_int("Crawler", "max_crawl_depth", 3))
+        self.min_depth_per_domain = max(0, self._resolve_int("Crawler", "min_depth_per_domain", 1))
+        self.max_url_path_depth = max(0, self._resolve_int("Crawler", "max_url_path_depth", 8))
+        self.max_query_strings = max(1, self._resolve_int("Crawler", "max_query_strings", 5))
+        self.query_string_dedup = self.config.getboolean("Crawler", "query_string_dedup", fallback=True)
+        self.whitelisted_path_keywords = set(
+            kw.lower().strip() for kw in self._resolve_list("Crawler", "whitelisted_path_keywords", []) if kw.strip()
+        )
+        self.blacklist_patterns = [
+            re.compile(pattern.strip()) for pattern in self._resolve_list("Crawler", "blacklist_patterns", []) if pattern.strip()
+        ]
+
         self.queue = Queue()
         self.lock = threading.Lock()
         self.save_lock = threading.Lock()
         self.visited_urls = set()
         self.known_urls = set()
+        self.domain_page_count = {}  # Track pages per domain for diversity
+        self.url_depth_map = {}  # Track depth of each URL
         self.index = {}
         self.webpage_info = {}
         self.doc_words = {}
@@ -497,6 +546,10 @@ class CrawlerService:
             return False
         if self.should_skip_url(normalized):
             return False
+        
+        # Check domain page limits for URL diversity
+        if not self.can_crawl_from_domain(normalized):
+            return False
 
         with self.lock:
             if normalized in self.known_urls or normalized in self.visited_urls:
@@ -510,6 +563,10 @@ class CrawlerService:
         if not normalized:
             return False
         if self.should_skip_url(normalized):
+            return False
+        
+        # Check domain page limits for URL diversity
+        if not self.can_crawl_from_domain(normalized):
             return False
 
         with self.lock:
@@ -583,16 +640,59 @@ class CrawlerService:
             raise
 
     def should_skip_url(self, url):
+        """Check if a URL should be skipped based on various filters."""
         parsed = urlparse(url)
+        origin = parsed.netloc
         lowered_path = parsed.path.lower()
+        
+        # ACTION PATH KEYWORDS: Skip login, cart, etc.
         if any(keyword in lowered_path for keyword in self.action_path_keywords):
             return True
 
+        # QUERY STRING DEDUP: Normalize URLs by removing/ignoring query strings
         query_items = parse_qsl(parsed.query, keep_blank_values=True)
-        if len(query_items) > 8:
+        if len(query_items) > self.max_query_strings:
             return True
+        
+        # PATH DEPTH LIMIT: Don't crawl URLs that are too deep
+        if self.max_url_path_depth > 0:
+            path_depth = len([p for p in parsed.path.split('/') if p])
+            if path_depth > self.max_url_path_depth:
+                return True
+        
+        # WHITELIST CHECK: If whitelist exists, only crawl matching paths
+        if self.whitelisted_path_keywords:
+            if not any(keyword in lowered_path for keyword in self.whitelisted_path_keywords):
+                return True
+        
+        # BLACKLIST CHECK: Skip matching patterns
+        if self.blacklist_patterns:
+            if any(pattern.search(url) for pattern in self.blacklist_patterns):
+                return True
 
         return False
+    
+    def can_crawl_from_domain(self, url):
+        """Check if we can crawl this URL based on domain page limits and depth constraints."""
+        parsed = urlparse(url)
+        origin = parsed.netloc
+        
+        with self.lock:
+            current_count = self.domain_page_count.get(origin, 0)
+        
+        # Max pages per domain check
+        if current_count >= self.max_pages_per_domain:
+            return False
+        
+        return True
+    
+    def record_domain_crawl(self, url):
+        """Record that we're crawling a URL from a domain."""
+        parsed = urlparse(url)
+        origin = parsed.netloc
+        
+        with self.lock:
+            self.domain_page_count[origin] = self.domain_page_count.get(origin, 0) + 1
 
     def should_stop(self):
         return self.stop_event.is_set() or (self.crawl_limit > 0 and self.crawl_count >= self.crawl_limit)
@@ -606,13 +706,51 @@ class CrawlerService:
     def build_snapshot_payloads(self, index_snapshot, doc_snapshot, graph_snapshot, crawl_count):
         pagerank_scores = compute_pagerank(graph_snapshot) if graph_snapshot else {}
 
+        # Collect all content fingerprints for duplicate detection
+        duplicate_fingerprints = set(self.content_fingerprints.keys()) if self.content_fingerprints else set()
+
         doc_data = {}
         for doc_id, info in doc_snapshot.items():
+            url = info["url"]
+            
+            # Calculate Panda score (content quality)
+            panda_score_result = score_content_quality(
+                content_text="\n".join(info.get("words", [])),  # Use words as proxy for content
+                html_text="",  # We don't store original HTML, using empty
+                title=info.get("title", ""),
+                word_count=len(info.get("words", [])),
+                keywords=None,
+                duplicate_fingerprints=duplicate_fingerprints,
+                content_fingerprint=info.get("content_fingerprint"),
+                days_old=None,  # No timestamp tracking yet
+            )
+            panda_score = panda_score_result.get("overall_score", 0.5)
+            
+            # Calculate Penguin score (link quality)
+            inbound_links = [
+                u for u, targets in graph_snapshot.items()
+                if url in targets
+            ] if graph_snapshot else []
+            outbound_links = graph_snapshot.get(url, []) if graph_snapshot else []
+            
+            penguin_score_result = score_link_quality(
+                target_url=url,
+                backlinks_data=[{
+                    'domain': urlparse(link).netloc or 'unknown',
+                    'anchor_text': f"link from {urlparse(link).netloc}",
+                }  for link in inbound_links],
+                inbound_link_count=len(inbound_links),
+                outbound_link_count=len(outbound_links),
+            )
+            penguin_score = penguin_score_result.get("overall_score", 0.5)
+            
             doc_data[str(doc_id)] = {
-                "url": info["url"],
+                "url": url,
                 "title": info["title"],
                 "description": info["description"],
-                "pagerank": pagerank_scores.get(info["url"], 0),
+                "pagerank": pagerank_scores.get(url, 0),
+                "panda_score": round(panda_score, 4),
+                "penguin_score": round(penguin_score, 4),
             }
 
         with self.lock:
@@ -1099,6 +1237,7 @@ class CrawlerService:
                     with self.lock:
                         self.pagerank_graph[canonical_url] = hyperlink_connections
                         self.crawl_count += 1
+                    self.record_domain_crawl(canonical_url)  # Track domain pages
                     for new_url in new_urls:
                         self.enqueue_url(new_url)
                     continue
@@ -1116,6 +1255,8 @@ class CrawlerService:
                     self.crawl_count += 1
                     crawl_count = self.crawl_count
                     docs_indexed = len(self.webpage_info)
+                
+                self.record_domain_crawl(canonical_url)  # Track domain pages
 
                 for new_url in new_urls:
                     self.enqueue_url(new_url)

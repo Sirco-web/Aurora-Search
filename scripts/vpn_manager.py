@@ -69,16 +69,90 @@ class VPNManager:
         os.makedirs(self.logs_dir, exist_ok=True)
         os.makedirs(self.pid_dir, exist_ok=True)
         os.makedirs(self.vpn_configs_dir, exist_ok=True)
+        
+        # Network namespace isolation (for crawlers only)
+        self.use_namespace = False  # Set to True to isolate VPN to crawler only
+        self.namespace_name = "aurora_crawler"
 
     def can_manage_tun_devices(self):
         return os.geteuid() == 0
-
-    def should_abort_failover(self, reason):
-        lowered = (reason or "").lower()
-        return "cannot ioctl tunsetiff" in lowered or "operation not permitted" in lowered
+    
+    def setup_network_namespace(self):
+        """
+        Create isolated network namespace for crawler (VPN won't affect host PC).
+        
+        Requires: root privileges
+        
+        Usage:
+            vpn_mgr.use_namespace = True
+            vpn_mgr.setup_network_namespace()
+            # Crawler will run in isolated namespace with only VPN access
+        """
+        if not self.can_manage_tun_devices():
+            print("   ⚠ Namespace isolation requires root. Skipping namespace setup.")
+            return False
+        
+        try:
+            # Create namespace if it doesn't exist
+            result = subprocess.run(
+                ["ip", "netns", "add", self.namespace_name],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if result.returncode != 0 and "already exists" not in result.stderr:
+                print(f"   ⚠ Failed to create namespace: {result.stderr}")
+                return False
+            
+            # Create loopback interface in namespace
+            subprocess.run(
+                ["ip", "netns", "exec", self.namespace_name, "ip", "link", "set", "lo", "up"],
+                capture_output=True,
+                timeout=5
+            )
+            
+            print(f"   ✓ Network namespace '{self.namespace_name}' ready (crawler traffic isolated)")
+            self.use_namespace = True
+            return True
+        except Exception as e:
+            print(f"   ⚠ Namespace setup failed: {e}")
+            return False
+    
+    def get_crawler_command_prefix(self):
+        """
+        Returns command prefix to run crawler in isolated namespace.
+        
+        Returns:
+            List of command components to prepend to crawler command
+            
+        Example:
+            cmd = vpn_mgr.get_crawler_command_prefix() + ["python3", "crawler.py"]
+            subprocess.run(cmd)
+        """
+        if self.use_namespace:
+            return ["ip", "netns", "exec", self.namespace_name]
+        return []
+    
+    def cleanup_network_namespace(self):
+        """Delete the isolated network namespace."""
+        if not self.can_manage_tun_devices():
+            return
+        
+        try:
+            subprocess.run(
+                ["ip", "netns", "delete", self.namespace_name],
+                capture_output=True,
+                timeout=5
+            )
+        except Exception:
+            pass
 
     def openvpn_command(self):
         return ["openvpn"]
+    
+    def should_abort_failover(self, reason):
+        lowered = (reason or "").lower()
+        return "cannot ioctl tunsetiff" in lowered or "operation not permitted" in lowered
 
     def compatibility_args(self, config_file):
         args = [
@@ -240,15 +314,31 @@ class VPNManager:
         return self.system_ca_bundle()
 
     def preferred_data_ciphers(self, config_file):
+        """
+        Build cipher list for OpenVPN 2.6+
+        
+        OpenVPN 2.6 requires explicit cipher declaration.
+        VPNGate configs often use old AES-128-CBC, so we must include it.
+        """
         metadata = self.parse_config_metadata(config_file)
+        
+        # Start with modern, secure ciphers
         ciphers = [
             "AES-256-GCM",
             "AES-128-GCM",
             "CHACHA20-POLY1305",
         ]
+        
+        # VPNGate and old servers often use AES-128-CBC
+        # Always add it if it's a VPNGate config or explicitly specified
         legacy_cipher = metadata.get("cipher")
+        if metadata.get("is_vpngate") and "AES-128-CBC" not in ciphers:
+            ciphers.append("AES-128-CBC")
+        
+        # Add any other legacy cipher found in the config
         if legacy_cipher and legacy_cipher not in ciphers:
             ciphers.append(legacy_cipher)
+        
         return ":".join(ciphers)
 
     def quick_probe_config(self, config_file, timeout=1):
@@ -690,6 +780,12 @@ class VPNManager:
             "--daemon",
             "--writepid",
             pid_path,
+            "--script-security",
+            "2",
+            "--up",
+            "up",
+            "--down",
+            "down",
         ]
         cmd.extend(self.compatibility_args(config_file))
         cmd.extend(["--data-ciphers", self.preferred_data_ciphers(config_file)])

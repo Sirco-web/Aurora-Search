@@ -95,3 +95,4 @@ Thumbs.db
 !README.md
 !PROJECT_SETUP.md
 !PARALLEL_MODE_GUIDE.md
+data/crawl_state.json

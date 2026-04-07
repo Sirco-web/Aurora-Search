@@ -6,78 +6,78 @@
 crawler_name = SircoAuroraBot
 # Maximum number of URLs to crawl (0 = unlimited, stopped by max_file_size)
 crawl_limit = 100000
-# Number of concurrent worker threads
-num_workers = 50
+# Number of concurrent worker threads (higher = faster crawling, but more resource usage)
+num_workers = 80
 # Request timeout in seconds
 request_timeout = 15
 # Delay between requests (random range: min_delay to max_delay) - be respectful to servers
-min_delay = 3
-max_delay = 8
-# Optional custom seed list. Leave blank to use Aurora Search's built-in broad web seed set.
+min_delay = 1
+max_delay = 3
+# Maximum pages to crawl from any single domain (prevents over-indexing same site)
+# This ensures diversity: crawl many sites shallowly rather than one site deeply
+max_pages_per_domain = 50
+# Maximum crawl depth (following links: 0=seed URLs only, 1=direct links from seeds, etc)
+# Deeper = more comprehensive but slower; 3-4 is good for general indexing
+max_crawl_depth = 3
+# Minimum crawl depth before applying max_pages_per_domain (crawl at least this deep per domain)
+min_depth_per_domain = 1
+# URL path depth limit (don't crawl beyond /path/to/page/depth like this)
+# 0 = no limit, 1 = top level, 2 = /path/page, 3 = /path/to/page
+max_url_path_depth = 5
+# Skip URLs with too many query parameters (spam/duplicate detection)
+max_query_strings = 5
+# Deduplication: treat URLs with different query params as same content?
+query_string_dedup = true
+# Only crawl URLs with these path keywords (whitelist, leave empty for all)
+# Example: /article,/post,/news,/blog to crawl only article-like pages
+whitelisted_path_keywords =
+# Optional: blacklist specific patterns (comma-separated regex)
+blacklist_patterns = /admin,/backend,/api/internal
+# Updated to focus on content-rich pages, not just homepages
 seed_urls =
-    https://www.wikipedia.org
     https://en.wikipedia.org/wiki/Main_Page
-    https://www.wikidata.org
-    https://www.reddit.com
-    https://news.ycombinator.com
-    https://www.quora.com
-    https://stackexchange.com
-    https://www.bbc.com
-    https://www.cnn.com
-    https://www.nytimes.com
-    https://www.theguardian.com
-    https://www.reuters.com
-    https://apnews.com
-    https://www.aljazeera.com
-    https://www.npr.org
-    https://abcnews.go.com
-    https://www.foxnews.com
-    https://github.com
-    https://gitlab.com
-    https://stackoverflow.com
-    https://superuser.com
-    https://serverfault.com
-    https://dev.to
-    https://hashnode.com
-    https://medium.com
-    https://arxiv.org
-    https://scholar.google.com
-    https://www.khanacademy.org
-    https://ocw.mit.edu
-    https://plato.stanford.edu
-    https://www.britannica.com
-    https://www.yelp.com
-    https://www.tripadvisor.com
-    https://www.yellowpages.com
-    https://www.angi.com
-    https://www.crunchbase.com
-    https://www.amazon.com
-    https://www.ebay.com
-    https://www.walmart.com
-    https://www.target.com
-    https://www.bestbuy.com
-    https://www.etsy.com
-    https://www.youtube.com
-    https://vimeo.com
-    https://soundcloud.com
-    https://www.twitch.tv
-    https://wordpress.com
-    https://blogger.com
-    https://tumblr.com
-    https://substack.com
+    https://en.wikipedia.org/wiki/Special:Random
+    https://www.reddit.com/r/explainlikeimfive/
+    https://www.reddit.com/r/todayilearned/
+    https://www.reddit.com/r/AskReddit/
+    https://www.reddit.com/r/science/
+    https://www.reddit.com/r/technology/
+    https://www.reddit.com/r/news/
+    https://www.reddit.com/r/worldnews/
+    https://www.reddit.com/r/food/
+    https://www.reddit.com/r/recipes/
+    https://www.reddit.com/r/cooking/
+    https://www.bbc.com/news
+    https://www.bbc.com/news/world
+    https://www.cnn.com/world
+    https://www.nytimes.com/section/world
+    https://www.theguardian.com/world
+    https://stackoverflow.com/questions
+    https://dev.to/top/week
+    https://medium.com/tag/technology
+    https://github.com/trending
+    https://news.ycombinator.com/best
+    https://www.britannica.com/browse
+    https://www.khanacademy.org/
+    https://www.allrecipes.com/
+    https://www.foodnetwork.com/recipes
+    https://www.bonappetitmag.com/recipes
+    https://www.seriouseats.com/recipes
+    https://www.tripadvisor.com/Attractions
+    https://www.yelp.com/search?find_desc=restaurants
+    https://www.youtube.com/feed/trending
+    https://arxiv.org/list/cs/recent
+    https://apnews.com/hub/
+    https://www.reuters.com/world
+    https://www.aljazeera.com/news
+    https://www.npr.org/sections/news/
     https://www.usa.gov
     https://www.data.gov
     https://www.nasa.gov
-    https://www.census.gov
-    https://www.loc.gov
-    https://www.baidu.com
-    https://www.yandex.ru
-    https://www.naver.com
-    https://www.yahoo.co.jp
     https://www.bbc.co.uk
     https://www.lemonde.fr
     https://www.spiegel.de
-    https://en.wikipedia.org/wiki/Special:AllPages
+    https://substack.com
     https://en.wikipedia.org/wiki/Special:Random
     https://www.reddit.com/r/all
     https://news.ycombinator.com/newest
@@ -97,6 +97,36 @@ max_description_length = 300
 min_word_length = 2
 # Maximum number of words to store per page (0 = unlimited)
 max_words_per_page = 1000
+
+[Ranking]
+# RANKING ALGORITHM WEIGHTS (all must sum to 1.0)
+# These control how search results are ranked
+#
+# Relevance (0.0-1.0): How well the page matches the search query
+#   - Based on keyword presence in title/description/content
+#   - Higher = prioritize specific matches
+ranking_weight_relevance = 0.55
+
+# Content Quality/Panda (0.0-1.0): How good/trustworthy the content is
+#   - Based on content depth, structure, originality, readability  
+#   - Higher = prefer high-quality pages, penalize thin/duplicate content
+ranking_weight_panda = 0.20
+
+# Link Authority/PageRank (0.0-1.0): How important the page is based on links
+#   - Based on number and quality of incoming links
+#   - Higher = popular pages rank higher
+ranking_weight_pagerank = 0.15
+
+# Link Quality/Penguin (0.0-1.0): How trustworthy the links are
+#   - Based on link quality and naturalness
+#   - Higher = penalize spammy/fake links more
+ranking_weight_penguin = 0.10
+
+# Quality thresholds
+# If Panda score < this, heavily penalize (very low quality)
+panda_threshold_bad = 0.3
+# If Penguin score < this, penalize (spammy links)
+penguin_threshold_suspicious = 0.2
 
 [Data]
 # Maximum total data size in MB for the entire crawl (20GB max)
