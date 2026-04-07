@@ -590,14 +590,15 @@ def get_vpn_ip_from_docker():
     return None
 
 def build_vpn_docker_image(force_rebuild=False):
-    """Build Docker image for VPN from Dockerfile.vpn - only if needed"""
+    """Build Docker image for VPN from Dockerfile.vpn - only if needed or forced"""
     
-    # Skip if already exists (unless force_rebuild)
-    if docker_image_exists() and not force_rebuild:
+    # Check if already exists
+    if not force_rebuild and docker_image_exists():
         print("  ✓ Docker image already built: aurora-vpn:latest")
         return True
     
-    print("  [DOCKER] Building VPN container image...")
+    if force_rebuild or not docker_image_exists():
+        print("  [DOCKER] Building VPN container image...")
     
     dockerfile_path = os.path.join(os.path.dirname(__file__), "Dockerfile.vpn")
     
@@ -606,7 +607,7 @@ def build_vpn_docker_image(force_rebuild=False):
         cwd=os.path.dirname(__file__),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        timeout=120
+        timeout=180
     )
     
     if result.returncode != 0:
@@ -631,13 +632,18 @@ def start_vpn_docker_container(config_path):
     
     time.sleep(1)
     
-    # Start new container
+    # Start new container with proper capabilities and device access
     result = subprocess.run(
         ["docker", "run", "-d",
          "--name", "aurora-vpn",
          "--cap-add", "NET_ADMIN",
          "--cap-add", "NET_RAW",
+         "--cap-add", "SYS_ADMIN",
+         "--device", "/dev/net/tun:/dev/net/tun",  # Mount TUN device
+         "--device", "/dev/net/tap:/dev/net/tap",  # Mount TAP device (if available)
          "-p", "127.0.0.1:1080:1080",  # SOCKS5 proxy (only local)
+         "--dns", "8.8.8.8",  # Use Google DNS explicitly
+         "--dns", "8.8.4.4",
          "-v", f"{config_path}:/etc/openvpn/config/vpn.ovpn:ro",
          "aurora-vpn:latest"],
         stdout=subprocess.PIPE,
@@ -653,8 +659,8 @@ def start_vpn_docker_container(config_path):
     container_id = result.stdout.decode().strip()[:12]
     print(f"  ✓ VPN container started (ID: {container_id})")
     
-    # Wait for container to be ready
-    time.sleep(2)
+    # Wait for container to stabilize
+    time.sleep(3)
     
     return True
 
@@ -667,7 +673,7 @@ def test_vpn_docker_tunnel():
             ["docker", "exec", "aurora-vpn", "curl", "-s", "--max-time", "15",
              "https://api.ipify.org?format=json"],
             stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
             text=True,
             timeout=20
         )
@@ -682,10 +688,24 @@ def test_vpn_docker_tunnel():
                     return vpn_ip
             except:
                 pass
-    except:
+    except Exception as e:
         pass
     
+    # Debug: show Docker logs
     print(f"  ✗ VPN tunnel test failed")
+    print("  [DEBUG] OpenVPN logs from container:")
+    result = subprocess.run(["docker", "logs", "aurora-vpn"],
+                           stdout=subprocess.PIPE,
+                           stderr=subprocess.STDOUT,
+                           text=True,
+                           timeout=5)
+    
+    # Show last 10 lines of logs
+    logs = result.stdout.strip().split('\n')
+    for line in logs[-10:]:
+        if line.strip():
+            print(f"    {line}")
+    
     return None
 
 def setup_vpn_namespace():
@@ -1059,9 +1079,9 @@ def start_vpn_with_docker(config_path, ip_before, timeout=60):
     print("\n🐳 VPN SETUP WITH DOCKER CONTAINER")
     print("=" * 50)
     
-    # STEP 1: Build Docker image (skip if already exists)
+    # STEP 1: Build Docker image (rebuild to get new entrypoint improvements)
     print("\nSTEP 1: Checking Docker image...")
-    if not build_vpn_docker_image(force_rebuild=False):
+    if not build_vpn_docker_image(force_rebuild=True):
         print("✗ Failed to build/check Docker image")
         return None
     

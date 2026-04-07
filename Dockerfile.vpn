@@ -1,17 +1,67 @@
 # VPN Container with SOCKS5 Proxy
 FROM ubuntu:22.04
 
-# Install OpenVPN, curl, and Python for SOCKS5 proxy
+# Install OpenVPN, curl, iproute2 (for debugging), and Python for SOCKS5 proxy
 RUN apt-get update && apt-get install -y \
     openvpn \
     curl \
     python3 \
     ca-certificates \
+    iproute2 \
+    iputils-ping \
+    net-tools \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 # Create directory for VPN configs
 RUN mkdir -p /etc/openvpn/config
+
+# Create startup script that runs both OpenVPN and SOCKS5
+RUN cat > /entrypoint.sh << 'SCRIPT'
+#!/bin/bash
+set -e
+
+echo "[CONTAINER] OpenVPN starting with config: /etc/openvpn/config/vpn.ovpn"
+echo "[CONTAINER] DNS check..."
+nslookup google.com 2>&1 | head -5
+
+# Start OpenVPN in background
+openvpn \
+    --config /etc/openvpn/config/vpn.ovpn \
+    --data-ciphers AES-128-CBC \
+    --data-ciphers-fallback AES-128-CBC \
+    --redirect-gateway def1 \
+    --log /tmp/openvpn.log \
+    --script-security 2 \
+    &
+
+OPENVPN_PID=$!
+echo "[CONTAINER] OpenVPN started (PID: $OPENVPN_PID)"
+
+# Wait a bit for OpenVPN to establish
+sleep 5
+
+# Check if OpenVPN is still running
+if ! kill -0 $OPENVPN_PID 2>/dev/null; then
+    echo "[CONTAINER] ERROR: OpenVPN died!"
+    cat /tmp/openvpn.log | tail -20
+    exit 1
+fi
+
+echo "[CONTAINER] OpenVPN running, checking tunnel..."
+ip addr show tun0 2>/dev/null || echo "[CONTAINER] tun0 not yet available"
+
+# Start SOCKS5 proxy
+echo "[CONTAINER] Starting SOCKS5 proxy on port 1080..."
+python3 /socks5-proxy.py &
+PROXY_PID=$!
+echo "[CONTAINER] SOCKS5 proxy started (PID: $PROXY_PID)"
+
+# Wait for background processes
+wait $OPENVPN_PID $PROXY_PID
+SCRIPT
+
+RUN chmod +x /entrypoint.sh
 
 # Create SOCKS5 proxy script
 RUN cat > /socks5-proxy.py << 'EOF'
@@ -115,5 +165,5 @@ EOF
 # Make it executable
 RUN chmod +x /socks5-proxy.py
 
-# Default startup: run OpenVPN and SOCKS5 proxy
-CMD ["bash", "-c", "openvpn --config /etc/openvpn/config/vpn.ovpn --data-ciphers AES-128-CBC --data-ciphers-fallback AES-128-CBC --redirect-gateway def1 & python3 /socks5-proxy.py"]
+# Default startup: use entrypoint script for better logging
+ENTRYPOINT ["/entrypoint.sh"]
