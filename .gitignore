@@ -11,8 +11,8 @@ doc_info.*                      # Generated document info
 ovpn/
 
 # PYTHON CACHE & ARTIFACTS
-__pycache__/                    # Python cache
-*/__pycache__/                  # Python cache in subdirectories
+__pycache__/
+scripts/__pycache__
 *.py[cod]                       # .pyc, .pyo, .pyd
 *$py.class                      # Python bytecode
 *.so                            # Compiled extensions
