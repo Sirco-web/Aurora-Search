@@ -891,11 +891,15 @@ class VPNManager:
         if remove:
             self.vpn_processes.pop(config, None)
 
-    def wait_for_activation(self, config, timeout=75, poll_interval=2):
+    def wait_for_activation(self, config, timeout=120, poll_interval=2):
         deadline = time.time() + timeout
+        start_time = time.time()
+        print(f"   Waiting for {config} to initialize (up to {timeout}s)...")
         while time.time() < deadline and not self.monitor_stop_event.is_set():
             active = self.check_vpn_status()
             if config in active:
+                elapsed = time.time() - start_time
+                print(f"   ✓ {config} is active (took {elapsed:.1f}s)")
                 return True, None
 
             info = self.vpn_processes.get(config)
@@ -905,6 +909,13 @@ class VPNManager:
             reason = self.get_recent_failure_reason(info)
             if reason:
                 return False, reason
+            
+            # Show progress every 10 seconds
+            elapsed = time.time() - start_time
+            if int(elapsed) % 10 == 0:
+                status = info.get("status", "unknown")
+                print(f"   ... {config} still initializing ({elapsed:.0f}s, status: {status})")
+            
             self.monitor_stop_event.wait(poll_interval)
         if self.monitor_stop_event.is_set():
             return False, "VPN startup cancelled"
