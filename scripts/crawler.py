@@ -718,12 +718,12 @@ class CrawlerService:
         for doc_id, info in doc_snapshot.items():
             url = info["url"]
             
-            # Calculate Panda score (content quality)
+            # Calculate Panda score (content quality) - NOW WITH PROPER CONTENT
             panda_score_result = score_content_quality(
-                content_text="\n".join(info.get("words", [])),  # Use words as proxy for content
+                content_text=info.get("content", ""),  # FIXED: Use actual content, not stemmed words
                 html_text="",  # We don't store original HTML, using empty
                 title=info.get("title", ""),
-                word_count=len(info.get("words", [])),
+                word_count=info.get("word_count", len(info.get("words", []))),  # FIXED: Use actual word count
                 keywords=None,
                 duplicate_fingerprints=duplicate_fingerprints,
                 content_fingerprint=info.get("content_fingerprint"),
@@ -753,6 +753,7 @@ class CrawlerService:
                 "url": url,
                 "title": info["title"],
                 "description": info["description"],
+                "content": info.get("content", ""),  # NEW: Store content for search relevance
                 "pagerank": pagerank_scores.get(url, 0),
                 "panda_score": round(panda_score, 4),
                 "penguin_score": round(penguin_score, 4),
