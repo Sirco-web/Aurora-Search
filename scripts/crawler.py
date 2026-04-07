@@ -600,7 +600,29 @@ class CrawlerService:
         return {"http": proxy_url, "https": proxy_url}
 
     def request_headers(self):
-        return {"User-Agent": "SircoAuroraBot/1.0"}
+        """Generate realistic request headers that look like a browser, not a bot."""
+        # Rotate through common browser User-Agents to avoid detection
+        user_agents = [
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:89.0) Gecko/20100101 Firefox/89.0",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.1 Safari/605.1.15",
+            "Mozilla/5.0 (X11; Linux x86_64; rv:89.0) Gecko/20100101 Firefox/89.0",
+        ]
+        # Pick a random bot identity but rotate based on URL to be consistent per domain
+        ua_index = hash(self.crawler_name) % len(user_agents)
+        user_agent = user_agents[ua_index]
+        
+        return {
+            "User-Agent": user_agent,
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Accept-Encoding": "gzip, deflate, br",
+            "DNT": "1",
+            "Connection": "keep-alive",
+            "Upgrade-Insecure-Requests": "1",
+        }
 
     def get_domain_delay(self, origin):
         crawl_delay = self.domain_crawl_delay.get(origin)
@@ -675,15 +697,49 @@ class CrawlerService:
                     url,
                     timeout=timeout,
                     proxies=proxies,
+                    headers=self.request_headers(),  # Send headers with each request
                     verify=False,  # SSL verification disabled for public crawling
                     allow_redirects=True,
                 )
+                
+                # Handle rate limiting and blocking (403, 429)
+                if response.status_code == 429:  # Too Many Requests
+                    # Rate limited - back off and try later
+                    if attempt < max_retries - 1:
+                        if self.stop_event.is_set():
+                            raise requests.RequestException("Crawler stop requested")
+                        # Exponential backoff for rate limiting
+                        wait_time = retry_delays[attempt] * 2
+                        if not self.sleep_with_stop(wait_time, interval=0.05):
+                            raise requests.RequestException("Crawler stop requested during retry backoff")
+                        continue
+                    else:
+                        # Give up after retries
+                        if origin:
+                            self.log(f"   ⚠ Rate limited (429) by {origin}, blocking for 15 min")
+                            self.domain_circuit_breaker[origin] = {
+                                'until': time.time() + 900,
+                                'failures': 0,
+                            }
+                        raise requests.RequestException(f"Rate limited by {origin}")
+                
+                elif response.status_code == 403:  # Forbidden
+                    # Active blocking - might want to back off
+                    if origin:
+                        self.log(f"   ⊘ Forbidden (403) by {origin} (likely bot detection)")
+                        # Hard block for longer period
+                        self.domain_circuit_breaker[origin] = {
+                            'until': time.time() + 1800,  # 30 minutes
+                            'failures': 0,
+                        }
+                    raise requests.RequestException(f"Blocked (403) by {origin}")
                 
                 # Success: reset failure counters
                 if origin:
                     if origin in self.domain_failure_tracker:
                         del self.domain_failure_tracker[origin]
-                    self.record_domain_request(origin, success=response.status_code < 500)
+                    # Only count 2xx/3xx as success
+                    self.record_domain_request(origin, success=response.status_code < 400)
                 
                 return response
                 
