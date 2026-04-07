@@ -499,10 +499,127 @@ def check_public_ip():
     except:
         return None
 
-def run_in_namespace(cmd, ns_name="vpn-ns"):
-    """Execute command in network namespace"""
-    full_cmd = ["ip", "netns", "exec", ns_name] + cmd
-    return subprocess.run(full_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+def check_docker_available():
+    """Check if Docker is installed and running"""
+    import subprocess
+    try:
+        result = subprocess.run(["docker", "ps"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
+        return result.returncode == 0
+    except:
+        return False
+
+def get_vpn_ip_from_docker():
+    """Get public IP from inside Docker container"""
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["docker", "exec", "aurora-vpn", "curl", "-s", "--max-time", "15",
+             "https://api.ipify.org?format=json"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            timeout=20
+        )
+        if result.returncode == 0:
+            import json
+            data = json.loads(result.stdout)
+            return data.get('ip', 'unknown')
+    except:
+        pass
+    return None
+
+def build_vpn_docker_image():
+    """Build Docker image for VPN from Dockerfile.vpn"""
+    print("  [DOCKER] Building VPN container image...")
+    
+    dockerfile_path = os.path.join(os.path.dirname(__file__), "Dockerfile.vpn")
+    
+    result = subprocess.run(
+        ["docker", "build", "-f", dockerfile_path, "-t", "aurora-vpn:latest", "."],
+        cwd=os.path.dirname(__file__),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=120
+    )
+    
+    if result.returncode != 0:
+        error = result.stderr.decode() if result.stderr else "Unknown error"
+        print(f"  ✗ Failed to build Docker image: {error}")
+        return False
+    
+    print(f"  ✓ Docker image built successfully: aurora-vpn:latest")
+    return True
+
+def start_vpn_docker_container(config_path):
+    """Start VPN inside Docker container with SOCKS5 proxy"""
+    print("  [DOCKER] Starting VPN container...")
+    
+    # Clean up old container if exists
+    subprocess.run(
+        ["docker", "rm", "-f", "aurora-vpn"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        timeout=10
+    )
+    
+    time.sleep(1)
+    
+    # Start new container
+    result = subprocess.run(
+        ["docker", "run", "-d",
+         "--name", "aurora-vpn",
+         "--cap-add", "NET_ADMIN",
+         "--cap-add", "NET_RAW",
+         "-p", "127.0.0.1:1080:1080",  # SOCKS5 proxy (only local)
+         "-v", f"{config_path}:/etc/openvpn/config/vpn.ovpn:ro",
+         "aurora-vpn:latest"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=10
+    )
+    
+    if result.returncode != 0:
+        error = result.stderr.decode()
+        print(f"  ✗ Failed to start container: {error}")
+        return False
+    
+    container_id = result.stdout.decode().strip()[:12]
+    print(f"  ✓ VPN container started (ID: {container_id})")
+    
+    # Wait for container to be ready
+    time.sleep(2)
+    
+    return True
+
+def test_vpn_docker_tunnel():
+    """Test if VPN tunnel inside Docker is working - returns VPN IP or None"""
+    print(f"  [TEST] Testing VPN tunnel inside Docker container...")
+    
+    try:
+        result = subprocess.run(
+            ["docker", "exec", "aurora-vpn", "curl", "-s", "--max-time", "15",
+             "https://api.ipify.org?format=json"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            timeout=20
+        )
+        
+        if result.returncode == 0:
+            try:
+                import json
+                data = json.loads(result.stdout)
+                vpn_ip = data.get('ip', None)
+                if vpn_ip:
+                    print(f"  ✓ Got VPN IP from container: {vpn_ip}")
+                    return vpn_ip
+            except:
+                pass
+    except:
+        pass
+    
+    print(f"  ✗ VPN tunnel test failed")
+    return None
 
 def setup_vpn_namespace():
     """Create isolated network namespace for VPN - returns namespace name or None"""
@@ -735,7 +852,7 @@ if __name__ == '__main__':
         return False
 
 def start_vpn_if_requested(options):
-    """Start VPN with proper network namespace isolation"""
+    """Start VPN using Docker container - simplest, most reliable approach"""
     if not options["start_vpn"]:
         return True
 
@@ -752,8 +869,15 @@ def start_vpn_if_requested(options):
     config_file = configs[0]
     config_path = os.path.join(vpn_dir, config_file)
     
-    print("\n🔐 VPN SETUP WITH NAMESPACE ISOLATION")
+    print("\n🐳 VPN SETUP WITH DOCKER CONTAINER")
     print("=" * 50)
+    
+    # STEP 0: Check Docker
+    print("\nSTEP 0: Checking Docker availability...")
+    if not check_docker_available():
+        print("✗ Docker is not running. Please start Docker and try again.")
+        return False
+    print("✓ Docker is available")
     
     # STEP 1: Get IP before VPN
     print("\nSTEP 1: Checking your PUBLIC IP (before VPN)...")
@@ -764,59 +888,38 @@ def start_vpn_if_requested(options):
         print("⚠ Could not check public IP")
         ip_before = "unknown"
     
-    # STEP 2: Create isolated namespace
-    print("\nSTEP 2: Creating isolated network namespace...")
-    ns_name = setup_vpn_namespace()
-    if not ns_name:
-        print("✗ Failed to create namespace")
+    # STEP 2: Build Docker image
+    print("\nSTEP 2: Building Docker image (one-time setup)...")
+    if not build_vpn_docker_image():
+        print("✗ Failed to build Docker image")
         return False
     
-    # STEP 3: Start VPN in namespace
-    print("\nSTEP 3: Starting VPN in isolated namespace...")
-    if not start_vpn_in_namespace(ns_name, config_path):
-        print("✗ Failed to start VPN in namespace")
-        subprocess.run(["ip", "netns", "delete", ns_name], stderr=subprocess.DEVNULL)
+    # STEP 3: Start Docker container
+    print("\nSTEP 3: Starting Docker container with VPN...")
+    if not start_vpn_docker_container(config_path):
+        print("✗ Failed to start Docker container")
         return False
     
-    # STEP 4: Test VPN tunnel - MUST GET DIFFERENT IP (VPN is working != same IP)
+    # STEP 4: Test VPN tunnel - MUST GET DIFFERENT IP (VPN working = different IP)
     print("\nSTEP 4: Testing VPN tunnel (waiting up to 60 seconds for tunnel...)...")
     vpn_ip = None
     for attempt in range(12):  # Try for up to 60 seconds
         print(f"  Attempt {attempt + 1}/12...", end='\r')
-        result = subprocess.run(
-            ["ip", "netns", "exec", ns_name, "curl", "-s", "--max-time", "15",
-             "https://api.ipify.org?format=json"],
-            timeout=20,
-            stderr=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            text=True
-        )
-        if result.returncode == 0:
-            try:
-                import json
-                vpn_ip = json.loads(result.stdout).get('ip', 'unknown')
-                if vpn_ip != "unknown":
-                    print(f"  ✓ Got VPN IP: {vpn_ip}    ")
-                    break
-            except:
-                pass
+        vpn_ip = test_vpn_docker_tunnel()
+        if vpn_ip:
+            print(f"  ✓ Got VPN IP: {vpn_ip}    ")
+            break
         time.sleep(5)
     
-    if not vpn_ip or vpn_ip == "unknown":
+    if not vpn_ip:
         print("✗ CRITICAL: VPN tunnel NEVER ESTABLISHED!")
-        print("  Check /tmp/vpn-vpn-ns.log")
-        subprocess.run(["ip", "netns", "delete", ns_name], stderr=subprocess.DEVNULL)
+        print("  Check Docker logs:")
+        subprocess.run(["docker", "logs", "aurora-vpn"], stderr=subprocess.DEVNULL)
+        subprocess.run(["docker", "rm", "-f", "aurora-vpn"], stderr=subprocess.DEVNULL)
         return False
     
-    # STEP 5: Start SOCKS5 proxy
-    print("\nSTEP 5: Starting SOCKS5 proxy in namespace...")
-    if not start_proxy_in_namespace(ns_name, proxy_port=1080):
-        print("✗ Failed to start SOCKS5 proxy")
-        subprocess.run(["ip", "netns", "delete", ns_name], stderr=subprocess.DEVNULL)
-        return False
-    
-    # STEP 6: Verify your PC is PROTECTED (IP unchanged)
-    print("\nSTEP 6: Verifying YOUR PC is PROTECTED...")
+    # STEP 5: Verify your PC is PROTECTED (IP unchanged)
+    print("\nSTEP 5: Verifying YOUR PC is PROTECTED...")
     ip_after = check_public_ip()
     if ip_after:
         print(f"✓ Your public IP: {ip_after}")
@@ -824,18 +927,18 @@ def start_vpn_if_requested(options):
         print("⚠ Could not check")
         ip_after = "unknown"
     
-    # STEP 7: Final comparison
-    print("\nSTEP 7: FINAL VERIFICATION:")
+    # STEP 6: Final comparison
+    print("\nSTEP 6: FINAL VERIFICATION:")
     print(f"  Your PC before: {ip_before}")
     print(f"  Your PC after:  {ip_after}")
-    print(f"  VPN in ns:      {vpn_ip}")
+    print(f"  VPN in container: {vpn_ip}")
     
     # Check 1: PC must stay same
     if ip_before != "unknown" and ip_after != "unknown":
         if ip_before != ip_after:
             print("\n✗ CRITICAL: Your PC's IP CHANGED!")
-            print("  Namespace isolation FAILED")
-            subprocess.run(["ip", "netns", "delete", ns_name], stderr=subprocess.DEVNULL)
+            print("  Docker is NOT providing proper isolation")
+            subprocess.run(["docker", "rm", "-f", "aurora-vpn"], stderr=subprocess.DEVNULL)
             return False
         print("  ✓ Your PC IP unchanged (PC protected)")
     
@@ -844,19 +947,23 @@ def start_vpn_if_requested(options):
         if ip_before == vpn_ip:
             print("\n✗ CRITICAL: VPN IP = Your IP!")
             print("  VPN is NOT WORKING - same IP means no tunnel")
-            subprocess.run(["ip", "netns", "delete", ns_name], stderr=subprocess.DEVNULL)
+            subprocess.run(["docker", "rm", "-f", "aurora-vpn"], stderr=subprocess.DEVNULL)
             return False
         print("  ✓ ✓ ✓ VPN IP DIFFERENT - VPN IS WORKING!")
     
     # Success!
-    runtime_state["vpn_namespace"] = ns_name
+    runtime_state["vpn_container"] = "aurora-vpn"
     runtime_state["vpn_running"] = True
     
+    # Set crawler proxy
+    os.environ["AURORA_VPN_PROXY"] = "socks5://127.0.0.1:1080"
+    
     print("\n" + "=" * 50)
-    print("✓ VPN NAMESPACE SETUP COMPLETE!")
-    print(f"  • Your PC IP: {ip_after} (isolated)")
-    print(f"  • VPN IP: {vpn_ip} (crawler uses this)")
-    print(f"  • SOCKS5: socks5://192.168.100.2:1080")
+    print("✓ VPN DOCKER SETUP COMPLETE!")
+    print(f"  • Your PC IP: {ip_after} (protected)")
+    print(f"  • VPN IP: {vpn_ip} (crawler uses)")
+    print(f"  • SOCKS5: socks5://127.0.0.1:1080")
+    print(f"  • Container: aurora-vpn")
     print("=" * 50)
     
     return True
@@ -1000,10 +1107,27 @@ def perform_runtime_shutdown(reason="Safe stop requested"):
     if vpn_manager:
         vpn_manager.stop_all_vpns()
     
-    # Clean up namespace-based VPN
+    # Clean up Docker VPN container
+    if runtime_state.get("vpn_container"):
+        container_name = runtime_state["vpn_container"]
+        print(f"\n🧹 Cleaning up VPN Docker container: {container_name}")
+        
+        result = subprocess.run(
+            ["docker", "rm", "-f", container_name],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=10
+        )
+        
+        if result.returncode == 0:
+            print("✓ VPN Docker container cleaned up")
+        else:
+            print("⚠ Error cleaning up Docker container (may already be removed)")
+    
+    # Clean up old namespace-based VPN if exists (migration from old setup)
     if runtime_state.get("vpn_namespace"):
         ns_name = runtime_state["vpn_namespace"]
-        print(f"\n🧹 Cleaning up VPN namespace: {ns_name}")
+        print(f"\n🧹 Cleaning up legacy VPN namespace: {ns_name}")
         
         # Kill proxy process
         proxy_proc = runtime_state.get("proxy_process")
@@ -1024,9 +1148,9 @@ def perform_runtime_shutdown(reason="Safe stop requested"):
             except:
                 pass
         
-        # Delete namespace (this cleans up all interfaces and processes in it)
+        # Delete namespace 
         subprocess.run(["ip", "netns", "delete", ns_name], stderr=subprocess.DEVNULL)
-        print("✓ VPN namespace cleaned up")
+        print("✓ Legacy VPN namespace cleaned up")
     
     # Kill simple VPN if it was started (legacy)
     if runtime_state.get("vpn_running") and not runtime_state.get("vpn_namespace"):

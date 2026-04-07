@@ -1,0 +1,119 @@
+# VPN Container with SOCKS5 Proxy
+FROM ubuntu:22.04
+
+# Install OpenVPN, curl, and Python for SOCKS5 proxy
+RUN apt-get update && apt-get install -y \
+    openvpn \
+    curl \
+    python3 \
+    ca-certificates \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create directory for VPN configs
+RUN mkdir -p /etc/openvpn/config
+
+# Create SOCKS5 proxy script
+RUN cat > /socks5-proxy.py << 'EOF'
+import socket
+import struct
+import sys
+import select
+
+def handle_socks5(client_socket):
+    try:
+        # SOCKS5 greeting
+        data = client_socket.recv(2)
+        if len(data) < 2 or data[0] != 5:
+            return
+        
+        nmethods = data[1]
+        methods = client_socket.recv(nmethods)
+        client_socket.send(b'\x05\x00')  # No auth required
+        
+        # Request
+        data = client_socket.recv(4)
+        if len(data) < 4:
+            return
+        ver, cmd, _, atyp = data[0], data[1], data[2], data[3]
+        
+        if cmd != 1:  # Only CONNECT
+            return
+        
+        # Parse address
+        if atyp == 1:  # IPv4
+            addr = socket.inet_ntoa(client_socket.recv(4))
+            port = struct.unpack('>H', client_socket.recv(2))[0]
+        elif atyp == 3:  # Domain
+            domain_len = client_socket.recv(1)[0]
+            addr = client_socket.recv(domain_len).decode()
+            port = struct.unpack('>H', client_socket.recv(2))[0]
+        elif atyp == 4:  # IPv6
+            addr = socket.inet_ntop(socket.AF_INET6, client_socket.recv(16))
+            port = struct.unpack('>H', client_socket.recv(2))[0]
+        else:
+            return
+        
+        # Connect to remote
+        try:
+            remote = socket.socket(socket.AF_INET if atyp != 4 else socket.AF_INET6, socket.SOCK_STREAM)
+            remote.connect((addr, port))
+            
+            # Send success response
+            resp = b'\x05\x00\x00\x01'
+            resp += socket.inet_aton(remote.getsockname()[0])
+            resp += struct.pack('>H', remote.getsockname()[1])
+            client_socket.send(resp)
+            
+            # Relay traffic
+            while True:
+                ready = select.select([client_socket, remote], [], [], 1)
+                if client_socket in ready[0]:
+                    data = client_socket.recv(4096)
+                    if not data:
+                        break
+                    remote.send(data)
+                if remote in ready[0]:
+                    data = remote.recv(4096)
+                    if not data:
+                        break
+                    client_socket.send(data)
+        except:
+            pass
+        finally:
+            try:
+                client_socket.close()
+            except:
+                pass
+            try:
+                remote.close()
+            except:
+                pass
+    except:
+        pass
+
+if __name__ == '__main__':
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server.bind(('0.0.0.0', 1080))
+    server.listen(100)
+    print(f"SOCKS5 server listening on port 1080", flush=True)
+    
+    try:
+        while True:
+            try:
+                client, addr = server.accept()
+                handle_socks5(client)
+            except:
+                pass
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.close()
+EOF
+
+# Make it executable
+RUN chmod +x /socks5-proxy.py
+
+# Default startup: run OpenVPN and SOCKS5 proxy
+CMD ["bash", "-c", "openvpn --config /etc/openvpn/config/vpn.ovpn --data-ciphers AES-128-CBC --redirect-gateway def1 & python3 /socks5-proxy.py"]
