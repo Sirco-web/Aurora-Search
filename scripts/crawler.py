@@ -7,8 +7,6 @@ import json
 import os
 import random
 import re
-import signal
-import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -1449,18 +1447,6 @@ class CrawlerService:
         else:
             self.log("Crawl limit: unlimited")
 
-        # AGGRESSIVE CTRL+C HANDLER:
-        # On ANY Ctrl+C (SIGINT), immediately set stop_event and exit process
-        # This ensures Ctrl+C responds within milliseconds, no matter what threads are doing
-        def aggressive_sigint_handler(signum, frame):
-            self.stop_event.set()
-            self.log("\n⚡ STOP SIGNAL: Ctrl+C pressed - forcing immediate shutdown (all threads will be terminated)...")
-            # Exit immediately without waiting for threads
-            os._exit(0)
-        
-        # Register aggressive handler - catches EVERY Ctrl+C
-        signal.signal(signal.SIGINT, aggressive_sigint_handler)
-
         resumed = self.load_resume_state()
         if resumed:
             self.log("Resuming crawler from the last saved crawl state.")
@@ -1481,12 +1467,12 @@ class CrawlerService:
                         # Worker didn't finish in 0.5s, continue
                         pass
             except KeyboardInterrupt:
-                # Second line of defense - if signal handler somehow misses it
+                # Ctrl+C pressed - graceful shutdown
+                self.log("\n⚡ STOP SIGNAL: Ctrl+C pressed - stopping crawler...")
                 self.stop_event.set()
                 executor.shutdown(wait=False)
                 for future in futures:
                     future.cancel()
-                os._exit(0)
 
         # Save state one last time before exiting
         self.log("Crawler is finishing in-flight work and saving the last snapshot.")
