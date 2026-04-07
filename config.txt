@@ -12,10 +12,10 @@ num_workers = 80
 request_timeout = 15
 # Delay between requests (random range: min_delay to max_delay) - be respectful to servers
 min_delay = 1
-max_delay = 3
+max_delay = 2
 # Maximum pages to crawl from any single domain (prevents over-indexing same site)
 # This ensures diversity: crawl many sites shallowly rather than one site deeply
-max_pages_per_domain = 50
+max_pages_per_domain = 200
 # Maximum crawl depth (following links: 0=seed URLs only, 1=direct links from seeds, etc)
 # Deeper = more comprehensive but slower; 3-4 is good for general indexing
 max_crawl_depth = 3
