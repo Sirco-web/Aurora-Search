@@ -662,8 +662,10 @@ class CrawlerService:
         if timeout is None:
             timeout = 8 if not proxies else 10  # Reduced from 10 and 15
         
+        # FIXED: Much shorter retry delays - 0.1s, 0.2s, 0.3s instead of 1s, 2s, 4s
+        # This allows workers to respond to stop_event quickly even during retries
         max_retries = 3
-        retry_delays = [1, 2, 4]  # seconds: exponential backoff
+        retry_delays = [0.1, 0.2, 0.3]  # MUCH shorter to allow instant stop
         
         last_exception = None
         
@@ -686,11 +688,14 @@ class CrawlerService:
                 return response
                 
             except requests.Timeout as e:
-                # Timeout - retry with backoff
+                # Timeout - retry with TINY backoff (allows instant stop)
                 last_exception = e
                 if attempt < max_retries - 1:
+                    if self.stop_event.is_set():
+                        raise requests.RequestException("Crawler stop requested during retry backoff")
                     wait_time = retry_delays[attempt]
-                    if not self.sleep_with_stop(wait_time):
+                    # Use sleep_with_stop so we check stop_event every 0.05s
+                    if not self.sleep_with_stop(wait_time, interval=0.05):
                         raise requests.RequestException("Crawler stop requested during retry backoff")
                 else:
                     # Final timeout after retries - log domain failure
@@ -723,10 +728,10 @@ class CrawlerService:
                         }
                         self.log(f"   ⚠ Circuit breaker: {origin} blocked (unreachable)")
                 
-                if attempt < max_retries - 1:
-                    wait_time = retry_delays[attempt]
-                    if not self.sleep_with_stop(wait_time):
-                        raise requests.RequestException("Crawler stop requested during retry backoff")
+                # FIXED: Don't retry on connection errors - fail immediately
+                # Connection refused/unreachable won't get better with retries
+                # Only retry on timeouts which might be transient
+                raise last_exception
         
         # All retries exhausted
         if last_exception:
