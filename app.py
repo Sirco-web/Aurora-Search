@@ -500,13 +500,61 @@ def check_public_ip():
         return None
 
 def check_docker_available():
-    """Check if Docker is installed and running"""
+    """Check if Docker is installed and running. If not, install/start it automatically."""
     import subprocess
-    try:
+    
+    # First, check if docker command exists
+    result = subprocess.run(["which", "docker"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    docker_installed = result.returncode == 0
+    
+    if not docker_installed:
+        print("  [DOCKER] Docker not found. Installing Docker...")
+        
+        # Update package list
+        result = subprocess.run(["sudo", "apt", "update"], 
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60)
+        
+        # Install Docker
+        result = subprocess.run(["sudo", "apt", "install", "-y", "docker.io"],
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=120)
+        
+        if result.returncode != 0:
+            print("  ✗ Failed to install Docker")
+            return False
+        
+        print("  ✓ Docker installed successfully")
+        
+        # Add current user to docker group so we can run without sudo
+        subprocess.run(["sudo", "usermod", "-aG", "docker", os.environ.get("USER", "root")],
+                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    
+    # Check if Docker daemon is running
+    result = subprocess.run(["docker", "ps"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
+    
+    if result.returncode != 0:
+        print("  [DOCKER] Docker daemon not running. Starting Docker...")
+        
+        # Try to start Docker daemon
+        result = subprocess.run(["sudo", "systemctl", "start", "docker"],
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
+        
+        if result.returncode != 0:
+            print("  ✗ Failed to start Docker daemon")
+            return False
+        
+        print("  ✓ Docker daemon started")
+        
+        # Wait for Docker to be ready
+        time.sleep(2)
+        
+        # Verify it's running
         result = subprocess.run(["docker", "ps"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
-        return result.returncode == 0
-    except:
-        return False
+        if result.returncode != 0:
+            print("  ✗ Docker still not responding")
+            return False
+    
+    print("  ✓ Docker is running and ready")
+    return True
 
 def docker_image_exists(image_name="aurora-vpn:latest"):
     """Check if Docker image already exists (skip rebuild)"""
@@ -1136,8 +1184,13 @@ def start_vpn_if_requested(options):
     # Call appropriate setup
     if choice == "1":
         # Docker approach - try each config until one works
+        print("\n🐳 Checking Docker installation and starting if needed...")
         if not check_docker_available():
-            print("\n✗ Docker is not running. Please start Docker and try again.")
+            print("\n✗ Failed to install or start Docker.\n"
+                  "Please check that:\n"
+                  "  • You have sudo access\n"
+                  "  • Your system supports Docker\n"
+                  "Or manually start Docker: sudo systemctl start docker")
             return False
         
         # Try each VPN config in Docker until one works
