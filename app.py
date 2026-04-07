@@ -621,48 +621,103 @@ def test_vpn_tunnel(ns_name):
     print(f"  ✗ VPN tunnel test failed or took too long")
     return False
 
-def start_proxy_in_namespace(ns_name, proxy_port=8888):
-    """Start a simple HTTP proxy inside namespace for crawler to use"""
+def start_proxy_in_namespace(ns_name, proxy_port=1080):
+    """Start a SOCKS5 proxy inside namespace - supports both HTTP and HTTPS"""
     import subprocess
     
-    # Create simple proxy script
+    # Create simple SOCKS5 proxy script
     proxy_script = f"""
-import http.server
-import socketserver
+import socket
+import struct
 import sys
 
-class ProxyHandler(http.server.BaseHTTPRequestHandler):
-    def do_GET(self):
-        try:
-            import urllib.request
-            req = urllib.request.Request(self.path, headers=self.headers)
-            response = urllib.request.urlopen(req, timeout=30)
-            self.send_response(response.status)
-            for header, value in response.headers.items():
-                self.send_header(header, value)
-            self.end_headers()
-            self.wfile.write(response.read())
-        except Exception as e:
-            self.send_error(502)
+def handle_socks5(client_socket):
+    # SOCKS5 greeting
+    data = client_socket.recv(2)
+    if data[0] != 5:
+        return
     
-    def do_POST(self):
-        self.do_GET()
+    nmethods = data[1]
+    methods = client_socket.recv(nmethods)
+    client_socket.send(b'\\x05\\x00')  # No auth required
     
-    def log_message(self, format, *args):
+    # Request
+    data = client_socket.recv(4)
+    ver, cmd, _, atyp = data[0], data[1], data[2], data[3]
+    
+    if cmd != 1:  # Only CONNECT
+        return
+    
+    # Parse address
+    if atyp == 1:  # IPv4
+        addr = socket.inet_ntoa(client_socket.recv(4))
+        port = struct.unpack('>H', client_socket.recv(2))[0]
+    elif atyp == 3:  # Domain
+        domain_len = client_socket.recv(1)[0]
+        addr = client_socket.recv(domain_len).decode()
+        port = struct.unpack('>H', client_socket.recv(2))[0]
+    elif atyp == 4:  # IPv6
+        addr = socket.inet_ntop(socket.AF_INET6, client_socket.recv(16))
+        port = struct.unpack('>H', client_socket.recv(2))[0]
+    else:
+        return
+    
+    # Connect to remote
+    try:
+        remote = socket.socket(socket.AF_INET if atyp != 4 else socket.AF_INET6, socket.SOCK_STREAM)
+        remote.connect((addr, port))
+        
+        # Send success response
+        resp = b'\\x05\\x00\\x00\\x01'
+        resp += socket.inet_aton(remote.getsockname()[0])
+        resp += struct.pack('>H', remote.getsockname()[1])
+        client_socket.send(resp)
+        
+        # Relay traffic
+        import select
+        while True:
+            ready = select.select([client_socket, remote], [], [], 1)
+            if client_socket in ready[0]:
+                data = client_socket.recv(4096)
+                if not data:
+                    break
+                remote.send(data)
+            if remote in ready[0]:
+                data = remote.recv(4096)
+                if not data:
+                    break
+                client_socket.send(data)
+    except:
         pass
+    finally:
+        client_socket.close()
+        remote.close()
 
 if __name__ == '__main__':
-    PORT = {proxy_port}
-    with socketserver.TCPServer(("0.0.0.0", PORT), ProxyHandler) as httpd:
-        print(f"Proxy started on port {{PORT}}", file=sys.stderr)
-        httpd.serve_forever()
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server.bind(('0.0.0.0', {proxy_port}))
+    server.listen(100)
+    print(f"SOCKS5 server listening on port {proxy_port}", file=sys.stderr, flush=True)
+    
+    try:
+        while True:
+            client, addr = server.accept()
+            try:
+                handle_socks5(client)
+            except:
+                pass
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.close()
 """
     
-    proxy_file = f"/tmp/proxy-{ns_name}.py"
+    proxy_file = f"/tmp/socks5-{ns_name}.py"
     with open(proxy_file, 'w') as f:
         f.write(proxy_script)
     
-    print(f"  [PROXY] Starting HTTP proxy on port {proxy_port} in namespace...")
+    print(f"  [SOCKS5] Starting SOCKS5 proxy on port {proxy_port} in namespace...")
     
     cmd = ["ip", "netns", "exec", ns_name, "python3", proxy_file]
     proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -671,12 +726,12 @@ if __name__ == '__main__':
     
     # Verify proxy started
     if proc.poll() is None:
-        print(f"  ✓ Proxy running (PID: {proc.pid})")
+        print(f"  ✓ SOCKS5 proxy running (PID: {proc.pid})")
         runtime_state["proxy_process"] = proc
         runtime_state["proxy_port"] = proxy_port
         return True
     else:
-        print(f"  ✗ Proxy failed to start")
+        print(f"  ✗ SOCKS5 proxy failed to start")
         return False
 
 def start_vpn_if_requested(options):
@@ -759,9 +814,9 @@ def start_vpn_if_requested(options):
     print("\n" + "=" * 50)
     print("✓ VPN NAMESPACE SETUP COMPLETE!")
     print(f"  • Isolated namespace: {ns_name}")
-    print(f"  • Proxy: http://192.168.100.2:8888")
+    print(f"  • SOCKS5 Proxy: socks5://192.168.100.2:1080")
     print(f"  • Your PC: PROTECTED (still uses normal IP)")
-    print(f"  • Crawler: will use VPN automatically")
+    print(f"  • Crawler: routes through VPN automatically")
     print("=" * 50)
     
     return True
@@ -805,9 +860,9 @@ def handle_crawler_save(event):
 
 def run_crawler_in_background(options):
     try:
-        # Set VPN proxy environment variable if VPN is running
+        # Set VPN SOCKS5 proxy environment variable if VPN is running
         if runtime_state.get("vpn_running"):
-            os.environ["AURORA_VPN_PROXY"] = "http://192.168.100.2:8888"
+            os.environ["AURORA_VPN_PROXY"] = "socks5://192.168.100.2:1080"
         
         runtime_options = {
             "save_every": options["reindex_every"],

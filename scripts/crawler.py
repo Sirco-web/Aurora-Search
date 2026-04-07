@@ -348,10 +348,10 @@ class CrawlerService:
         if use_proxy is None:
             use_proxy = self.config.getboolean("Proxy", "use_proxy", fallback=False)
 
-        # Check if VPN namespace proxy is available
+        # Check if VPN SOCKS5 proxy is available
         vpn_proxy = os.environ.get("AURORA_VPN_PROXY")
         if vpn_proxy:
-            self.log(f"✓ Using VPN proxy: {vpn_proxy}")
+            self.log(f"✓ Using VPN SOCKS5 proxy: {vpn_proxy}")
             return [vpn_proxy]
 
         if not use_proxy:
