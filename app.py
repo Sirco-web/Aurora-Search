@@ -490,13 +490,23 @@ def print_startup_summary(options):
         print("VPN routing mode: multiple active tunnels with rotating local proxies")
 
 
+def check_public_ip():
+    """Check public IP without VPN"""
+    import requests
+    try:
+        resp = requests.get('https://api.ipify.org?format=json', timeout=5, verify=False)
+        return resp.json().get('ip', 'unknown')
+    except:
+        return None
+
 def start_vpn_if_requested(options):
-    """Simple: Just start one VPN config with minimal overhead"""
+    """Start VPN with IP verification to ensure it doesn't break system connectivity"""
     if not options["start_vpn"]:
         return True
 
     import subprocess
     import os
+    import time
     
     vpn_dir = os.path.join(os.path.dirname(__file__), "ovpn")
     if not os.path.exists(vpn_dir):
@@ -512,11 +522,22 @@ def start_vpn_if_requested(options):
     config_file = configs[0]
     config_path = os.path.join(vpn_dir, config_file)
     
-    print("\nVPN STARTUP")
+    print("\nVPN STARTUP & VERIFICATION")
     print("=" * 50)
-    print(f"Starting: {config_file}")
     
-    # Ultra-simple OpenVPN command
+    # STEP 1: Get IP before VPN
+    print("STEP 1: Checking your PUBLIC IP (before VPN)...")
+    ip_before = check_public_ip()
+    if ip_before:
+        print(f"✓ Your public IP: {ip_before}")
+    else:
+        print("⚠ Could not check public IP (check network)")
+        ip_before = "unknown"
+    
+    # STEP 2: Start VPN
+    print(f"\nSTEP 2: Starting VPN: {config_file}")
+    
+    # Use routing rules to limit VPN to crawler only (not whole PC)
     cmd = [
         "openvpn",
         "--config", config_path,
@@ -525,26 +546,62 @@ def start_vpn_if_requested(options):
         "--dev", "tun6090",
         "--writepid", "/tmp/vpn.pid",
         "--log", "/tmp/vpn.log",
+        "--pull-filter", "ignore", "redirect-gateway",  # DON'T change system routing
     ]
     
     try:
         subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        import time
-        time.sleep(2)  # Give VPN time to start
+        time.sleep(3)
         
-        # Check if PID file was created
-        if os.path.exists("/tmp/vpn.pid"):
-            with open("/tmp/vpn.pid") as f:
-                pid = f.read().strip()
-            print(f"✓ VPN started (PID: {pid})")
-            print(f"✓ Log at: /tmp/vpn.log")
-            print("  (Your PC still uses normal internet)")
-            print("  (Crawler will route through VPN)")
-            runtime_state["vpn_running"] = True
-            return True
-        else:
-            print("✗ VPN failed to start")
+        if not os.path.exists("/tmp/vpn.pid"):
+            print("✗ VPN failed to start - no PID file")
             return False
+        
+        with open("/tmp/vpn.pid") as f:
+            vpn_pid = f.read().strip()
+        print(f"✓ VPN started (PID: {vpn_pid})")
+        
+        # STEP 3: Wait then check IP
+        print("\nSTEP 3: Waiting 5s for tunnel to establish...")
+        for i in range(5, 0, -1):
+            print(f"  {i}s...", end='\r')
+            time.sleep(1)
+        print("        ")
+        
+        ip_after = check_public_ip()
+        if ip_after:
+            print(f"✓ Your public IP (after VPN): {ip_after}")
+        else:
+            print("⚠ Could not check public IP after VPN start")
+            ip_after = "unknown"
+        
+        # STEP 4: Verify VPN is working
+        print("\nSTEP 4: VPN Verification:")
+        print(f"  IP before:  {ip_before}")
+        print(f"  IP after:   {ip_after}")
+        
+        if ip_before == "unknown" or ip_after == "unknown":
+            print("  ⚠ WARNING: Cannot verify - network issues")
+            print("  Continuing anyway...")
+        elif ip_before == ip_after:
+            print("\n✗ ERROR: IP didn't change!")
+            print("  The VPN is NOT routing crawler traffic properly")
+            print("  Killing VPN and stopping...")
+            try:
+                os.kill(int(vpn_pid), 15)
+            except:
+                pass
+            return False
+        else:
+            print("  ✓ IP changed - VPN IS routing traffic")
+        
+        print("\n" + "=" * 50)
+        print("✓ VPN is configured")
+        print("  IMPORTANT: Your PC still uses normal internet")
+        print("  ONLY crawler traffic routes through VPN")
+        print(f"  Check /tmp/vpn.log for details")
+        runtime_state["vpn_running"] = True
+        return True
             
     except Exception as e:
         print(f"✗ Failed to start VPN: {e}")
