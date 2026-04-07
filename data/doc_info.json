@@ -1,240 +1,270 @@
 {
   "0": {
+    "content": "",
     "description": "Top Links | Hacker News Hacker News new | past | comments | ask | show | jobs | submit | best login Most-upvoted stories of the last 48 hours. You can change the number of hours like this: best?h=24 ....",
     "pagerank": 0.000157,
-    "panda_score": 0.4034,
+    "panda_score": 0.0,
     "penguin_score": 0.3,
     "title": "Top Links | Hacker News",
     "url": "https://news.ycombinator.com/best"
   },
   "1": {
+    "content": "",
     "description": "Get all the latest news, live updates and content about the World from across the BBC.",
     "pagerank": 0.000157,
-    "panda_score": 0.4753,
+    "panda_score": 0.0,
     "penguin_score": 0.3,
     "title": "World | Latest News & Updates | BBC News",
     "url": "https://www.bbc.com/news/world"
   },
   "10": {
+    "content": "",
     "description": "Visit BBC News for the latest news, breaking news, video, audio and analysis. BBC News provides trusted World, U.S. and U.K. news as well as local and regional perspectives. Also entertainment, climate, business, science, technology and health news.",
     "pagerank": 0.00016,
-    "panda_score": 0.4865,
+    "panda_score": 0.0,
     "penguin_score": 0.7894,
     "title": "BBC News - Breaking news, video and the latest top stories from the U.S. and around the world",
     "url": "https://www.bbc.com/news"
   },
   "11": {
+    "content": "",
     "description": "Access your support options and sign in to your account for GitHub software support and product assistance. Get the help you need from our dedicated support team.",
     "pagerank": 0.000157,
-    "panda_score": 0.3573,
+    "panda_score": 0.0,
     "penguin_score": 0.3,
     "title": "Sign in for Software Support and Product Help - GitHub Support",
     "url": "https://support.github.com/request/landing"
   },
   "12": {
+    "content": "",
     "description": "Preserving open source software for future generations",
     "pagerank": 0.000172,
-    "panda_score": 0.3446,
+    "panda_score": 0.0,
     "penguin_score": 0.6533,
     "title": "GitHub Archive Program | Preserving open source software for future generations",
     "url": "https://archiveprogram.github.com/"
   },
   "13": {
+    "content": "",
     "description": "Wikipedia, the free encyclopedia Jump to content Main menu Main menu move to sidebar hide Navigation Main page Contents Current events Random article About Wikipedia Contact us Contribute Help Learn t...",
     "pagerank": 0.00016,
-    "panda_score": 0.4856,
+    "panda_score": 0.0,
     "penguin_score": 0.6827,
     "title": "Wikipedia, the free encyclopedia",
     "url": "https://en.wikipedia.org/wiki/Main_Page"
   },
   "14": {
+    "content": "",
     "description": "A space to discuss and keep up software development and manage your software career",
     "pagerank": 0.000158,
-    "panda_score": 0.4795,
+    "panda_score": 0.0,
     "penguin_score": 0.6889,
     "title": "DEV Community - Top posts this week",
     "url": "https://dev.to/top/week"
   },
   "15": {
+    "content": "",
     "description": "The best of the BBC, with the latest news and sport headlines, weather, TV & radio highlights and much more from across the whole of BBC Online.",
     "pagerank": 0.000157,
-    "panda_score": 0.4934,
+    "panda_score": 0.0,
     "penguin_score": 0.3,
     "title": "BBC - Home",
     "url": "https://www.bbc.co.uk/"
   },
   "16": {
+    "content": "",
     "description": "Wikiquote Jump to content Main menu Main menu move to sidebar hide Navigation Main page Community portal Village pump Recent changes Random page Help Contact Wikiquote Wikiquote links People Literary ...",
     "pagerank": 0.000158,
-    "panda_score": 0.4685,
+    "panda_score": 0.0,
     "penguin_score": 0.5678,
     "title": "Wikiquote",
     "url": "https://en.wikiquote.org/wiki/Main_Page"
   },
   "17": {
+    "content": "",
     "description": "Vikipediya, azad ensiklopediya M\u0259zmuna ke\u00e7 \u018fsas menyu \u018fsas menyu yan panel\u0259 k\u00f6\u00e7\u00fcr gizl\u0259 Naviqasiya Ana s\u0259hif\u0259 K\u0259nd meydan\u0131 \u0130cma portal\u0131 Son d\u0259yi\u015fiklikl\u0259r T\u0259sad\u00fcfi m\u0259qal\u0259 X\u00fcsusi s\u0259hif\u0259l\u0259r Layih\u0259l\u0259r Se\u00e7...",
     "pagerank": 0.000158,
-    "panda_score": 0.4732,
+    "panda_score": 0.0,
     "penguin_score": 0.5678,
     "title": "Vikipediya, azad ensiklopediya",
     "url": "https://az.wikipedia.org/wiki/Ana_s%C9%99hif%C9%99"
   },
   "18": {
+    "content": "",
     "description": "\u0648\u064a\u0643\u064a\u0628\u064a\u062f\u064a\u0627\u060c \u0627\u0644\u0645\u0648\u0633\u0648\u0639\u0629 \u0627\u0644\u062d\u0631\u0629 \u0627\u0646\u062a\u0642\u0644 \u0625\u0644\u0649 \u0627\u0644\u0645\u062d\u062a\u0648\u0649 \u0627\u0644\u0642\u0627\u0626\u0645\u0629 \u0627\u0644\u0631\u0626\u064a\u0633\u0629 \u0627\u0644\u0642\u0627\u0626\u0645\u0629 \u0627\u0644\u0631\u0626\u064a\u0633\u0629 \u0627\u0646\u0642\u0644 \u0644\u0644\u0634\u0631\u064a\u0637 \u0627\u0644\u062c\u0627\u0646\u0628\u064a \u0623\u062e\u0641 \u0627\u0644\u0645\u0648\u0633\u0648\u0639\u0629 \u0627\u0644\u0635\u0641\u062d\u0629 \u0627\u0644\u0631\u0626\u064a\u0633\u0629 \u0627\u0644\u0623\u062d\u062f\u0627\u062b \u0627\u0644\u062c\u0627\u0631\u064a\u0629 \u0623\u062d\u062f\u062b \u0627\u0644\u062a\u063a\u064a\u064a\u0631\u0627\u062a \u0623\u062d\u062f\u062b \u0627\u0644\u062a\u063a\u064a\u064a\u0631\u0627\u062a \u0627\u0644\u0623\u0633\u0627\u0633\u064a\u0629 \u062a\u0635\u0641\u062d \u0627\u0644\u0645\u0648\u0627\u0636\u064a\u0639 \u0623\u0628\u062c\u062f\u064a \u0628...",
     "pagerank": 0.000158,
-    "panda_score": 0.5125,
+    "panda_score": 0.0,
     "penguin_score": 0.5678,
     "title": "\u0648\u064a\u0643\u064a\u0628\u064a\u062f\u064a\u0627\u060c \u0627\u0644\u0645\u0648\u0633\u0648\u0639\u0629 \u0627\u0644\u062d\u0631\u0629",
     "url": "https://ar.wikipedia.org/wiki/%D8%A7%D9%84%D8%B5%D9%81%D8%AD%D8%A9_%D8%A7%D9%84%D8%B1%D8%A6%D9%8A%D8%B3%D8%A9"
   },
   "19": {
+    "content": "",
     "description": "Main Page - Meta-Wiki Jump to content Main menu Main menu move to sidebar hide Navigation Main page Wikimedia News Translations Recent changes Special pages Random page Help Babel Community Wikimedia ...",
     "pagerank": 0.00016,
-    "panda_score": 0.4597,
+    "panda_score": 0.0,
     "penguin_score": 0.6766,
     "title": "Main Page - Meta-Wiki",
     "url": "https://meta.wikimedia.org/wiki/Main_Page"
   },
   "2": {
+    "content": "",
     "description": "Elena Presser - Wikipedia Jump to content Main menu Main menu move to sidebar hide Navigation Main page Contents Current events Random article About Wikipedia Contact us Contribute Help Learn to edit ...",
     "pagerank": 0.000159,
-    "panda_score": 0.499,
+    "panda_score": 0.0,
     "penguin_score": 0.6189,
     "title": "Elena Presser - Wikipedia",
     "url": "https://en.wikipedia.org/wiki/Elena_Presser"
   },
   "20": {
+    "content": "",
     "description": "Wikipedia Zum Inhalt springen Hauptmen\u00fc Hauptmen\u00fc In die Seitenleiste verschieben Verbergen Nawigadzion Schdadsaid Wikipedia-Boadal Schdammdisch Sachgrubbe Ledschde \u00c4nnarunge Iaschnden Adiggl Unnaschd...",
     "pagerank": 0.000159,
-    "panda_score": 0.4448,
+    "panda_score": 0.0,
     "penguin_score": 0.5678,
     "title": "Wikipedia",
     "url": "https://pfl.wikipedia.org/wiki/Wikipedia:Haubdsaid"
   },
   "21": {
+    "content": "",
     "description": "webdev content on DEV Community",
     "pagerank": 0.000161,
-    "panda_score": 0.47,
+    "panda_score": 0.0,
     "penguin_score": 1.2678,
     "title": "Web Development - DEV Community",
     "url": "https://dev.to/t/webdev"
   },
   "22": {
+    "content": "",
     "description": "programming content on DEV Community",
     "pagerank": 0.000161,
-    "panda_score": 0.46,
+    "panda_score": 0.0,
     "penguin_score": 1.2678,
     "title": "Programming - DEV Community",
     "url": "https://dev.to/t/programming"
   },
   "23": {
+    "content": "",
     "description": "Wikipedia Jump to content Main menu Main menu move to sidebar hide hamba uye Iphepha Elingundoqo Community portal Utshitsho olusandokwenziwa Random page Uncedo Amaphepha Abalulekileyo Khangela Khangel...",
     "pagerank": 0.000158,
-    "panda_score": 0.4563,
+    "panda_score": 0.0,
     "penguin_score": 0.6358,
     "title": "Wikipedia",
     "url": "https://xh.wikipedia.org/wiki/Iphepha_Elingundoqo"
   },
   "24": {
+    "content": "",
     "description": "Deutschlands f\u00fchrende Nachrichtenseite. Alles Wichtige aus Politik, Wirtschaft, Sport, Kultur, Wissenschaft, Technik und mehr.",
     "pagerank": 0.000158,
-    "panda_score": 0.5287,
+    "panda_score": 0.0,
     "penguin_score": 0.5139,
     "title": "DER SPIEGEL | Online-Nachrichten",
     "url": "https://www.spiegel.de/"
   },
   "25": {
+    "content": "",
     "description": "Stack Overflow | The World\u2019s Largest Online Community for Developers",
     "pagerank": 0.000158,
-    "panda_score": 0.5156,
+    "panda_score": 0.0,
     "penguin_score": 0.6889,
     "title": "Newest Questions - Stack Overflow",
     "url": "https://stackoverflow.com/questions"
   },
   "26": {
+    "content": "",
     "description": "Latest World news news, comment and analysis from the Guardian, the world's leading liberal voice",
     "pagerank": 0.000158,
-    "panda_score": 0.4808,
+    "panda_score": 0.0,
     "penguin_score": 0.5839,
     "title": "Latest news from around the world | The Guardian",
     "url": "https://www.theguardian.com/world"
   },
   "27": {
+    "content": "",
     "description": "Le Monde.fr - 1er site d'information. Les articles du journal et toute l'actualit\u00e9 en continu : International, France, Soci\u00e9t\u00e9, Economie, Culture, Environnement, Blogs ...",
     "pagerank": 0.000157,
-    "panda_score": 0.53,
+    "panda_score": 0.0,
     "penguin_score": 0.5139,
     "title": "Le Monde.fr - Actualit\u00e9s et Infos en France et dans le monde",
     "url": "https://www.lemonde.fr/"
   },
   "28": {
+    "content": "",
     "description": "Apprenez l'anglais avec les cours personnalis\u00e9s du Monde.fr et Gymglish.",
     "pagerank": 0.000174,
-    "panda_score": 0.4635,
+    "panda_score": 0.0,
     "penguin_score": 0.6708,
     "title": "Cours d'anglais en ligne avec Gymglish",
     "url": "https://langues.lemonde.fr/fr/anglais"
   },
   "29": {
+    "content": "",
     "description": "Apprenez l'italien avec les cours personnalis\u00e9s du Monde.fr et Saga Baldoria.",
     "pagerank": 0.000174,
-    "panda_score": 0.4621,
+    "panda_score": 0.0,
     "penguin_score": 0.6708,
     "title": "Cours d'italien avec Saga Baldoria",
     "url": "https://langues.lemonde.fr/fr/italien"
   },
   "3": {
+    "content": "",
     "description": "GitHub is where people build software. More than 150 million people use GitHub to discover, fork, and contribute to over 420 million projects.",
     "pagerank": 0.000157,
-    "panda_score": 0.5037,
+    "panda_score": 0.0,
     "penguin_score": 0.6889,
     "title": "Trending  repositories on GitHub today \u00b7 GitHub",
     "url": "https://github.com/trending"
   },
   "4": {
+    "content": "",
     "description": "Client Challenge JavaScript is disabled in your browser. Please enable JavaScript to proceed. A required part of this site couldn\u00e2\u20ac\u2122t load. This may be due to a browser\n      extension, network issues...",
     "pagerank": 0.000157,
-    "panda_score": 0.3484,
+    "panda_score": 0.0,
     "penguin_score": 0.3,
     "title": "Client Challenge",
     "url": "https://www.khanacademy.org/"
   },
   "5": {
+    "content": "",
     "description": "Profile: StanAngeloff | Hacker News Hacker News new | past | comments | ask | show | jobs | submit login user: StanAngeloff created: May 1, 2014 karma: 1055 about: Hello there stranger! My name is Sta...",
     "pagerank": 0.000168,
-    "panda_score": 0.3324,
+    "panda_score": 0.0,
     "penguin_score": 0.8108,
     "title": "Profile: StanAngeloff | Hacker News",
     "url": "https://news.ycombinator.com/user?id=StanAngeloff"
   },
   "6": {
+    "content": "",
     "description": "Find government benefits, services, agencies, and information at USA.gov. Contact elected officials. Learn about passports, Social Security, taxes, and more.",
     "pagerank": 0.000161,
-    "panda_score": 0.4166,
+    "panda_score": 0.0,
     "penguin_score": 0.6714,
     "title": "Making government services easier to find | USAGov",
     "url": "https://www.usa.gov/"
   },
   "7": {
+    "content": "",
     "description": "The app for independent voices",
     "pagerank": 0.000157,
-    "panda_score": 0.3393,
+    "panda_score": 0.0,
     "penguin_score": 0.3,
     "title": "Substack",
     "url": "https://substack.com/"
   },
   "8": {
+    "content": "",
     "description": "Computer Science Skip to main content Learn about arXiv becoming an independent nonprofit. We gratefully acknowledge support from the Simons Foundation, member institutions , and all contributors. Don...",
     "pagerank": 0.000158,
-    "panda_score": 0.4977,
+    "panda_score": 0.0,
     "penguin_score": 0.6189,
     "title": "Computer Science",
     "url": "https://arxiv.org/list/cs/recent"
   },
   "9": {
+    "content": "",
     "description": "Maintainer Community / Maintainer Community Join the Maintainer Community on GitHub! The Maintainer Community is a private space for maintainers to connect with peers, preview GitHub features, and hel...",
     "pagerank": 0.000157,
-    "panda_score": 0.3594,
+    "panda_score": 0.0,
     "penguin_score": 0.3,
     "title": "Maintainer Community",
     "url": "https://maintainers.github.com/auth/signin"
