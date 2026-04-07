@@ -12,6 +12,7 @@ ovpn/
 
 # PYTHON CACHE & ARTIFACTS
 __pycache__/                    # Python cache
+*/__pycache__/                  # Python cache in subdirectories
 *.py[cod]                       # .pyc, .pyo, .pyd
 *$py.class                      # Python bytecode
 *.so                            # Compiled extensions

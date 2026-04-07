@@ -7,6 +7,8 @@ import json
 import os
 import random
 import re
+import signal
+import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -1447,6 +1449,18 @@ class CrawlerService:
         else:
             self.log("Crawl limit: unlimited")
 
+        # AGGRESSIVE CTRL+C HANDLER:
+        # On ANY Ctrl+C (SIGINT), immediately set stop_event and exit process
+        # This ensures Ctrl+C responds within milliseconds, no matter what threads are doing
+        def aggressive_sigint_handler(signum, frame):
+            self.stop_event.set()
+            self.log("\n⚡ STOP SIGNAL: Ctrl+C pressed - forcing immediate shutdown (all threads will be terminated)...")
+            # Exit immediately without waiting for threads
+            os._exit(0)
+        
+        # Register aggressive handler - catches EVERY Ctrl+C
+        signal.signal(signal.SIGINT, aggressive_sigint_handler)
+
         resumed = self.load_resume_state()
         if resumed:
             self.log("Resuming crawler from the last saved crawl state.")
@@ -1460,29 +1474,19 @@ class CrawlerService:
 
             try:
                 for future in futures:
-                    # FIXED: Use timeout so Ctrl+C doesn't block indefinitely
-                    # Timeout set to 0.5 seconds - if a worker hangs, we don't wait long
+                    # Use timeout so we can check stop_event periodically
                     try:
                         future.result(timeout=0.5)
                     except TimeoutError:
-                        # Worker didn't finish in 0.5s, but that's OK
-                        # The stop_event is set, so it will exit soon
+                        # Worker didn't finish in 0.5s, continue
                         pass
             except KeyboardInterrupt:
-                self.log("\n⚡ STOP SIGNAL: Ctrl+C pressed - initiating immediate shutdown...")
+                # Second line of defense - if signal handler somehow misses it
                 self.stop_event.set()
-                
-                # FIXED: Force executor shutdown without waiting for all threads
-                # We already set stop_event, so threads will exit naturally
-                # Don't wait around for threads to finish - just shut down NOW
                 executor.shutdown(wait=False)
-                
-                # FIXED: Cancel any pending futures
                 for future in futures:
                     future.cancel()
-                
-                self.log("✓ Crawler stop signal sent to all workers")
-                self.log("✓ Saving final snapshot before exit...")
+                os._exit(0)
 
         # Save state one last time before exiting
         self.log("Crawler is finishing in-flight work and saving the last snapshot.")
