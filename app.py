@@ -778,20 +778,45 @@ def start_vpn_if_requested(options):
         subprocess.run(["ip", "netns", "delete", ns_name], stderr=subprocess.DEVNULL)
         return False
     
-    # STEP 4: Test VPN tunnel
-    print("\nSTEP 4: Testing VPN tunnel (this may take 10 seconds)...")
-    if not test_vpn_tunnel(ns_name):
-        print("⚠ VPN tunnel test failed - proceeding anyway")
+    # STEP 4: Test VPN tunnel - MUST GET DIFFERENT IP (VPN is working != same IP)
+    print("\nSTEP 4: Testing VPN tunnel (waiting up to 60 seconds for tunnel...)...")
+    vpn_ip = None
+    for attempt in range(12):  # Try for up to 60 seconds
+        print(f"  Attempt {attempt + 1}/12...", end='\r')
+        result = subprocess.run(
+            ["ip", "netns", "exec", ns_name, "curl", "-s", "--max-time", "15",
+             "https://api.ipify.org?format=json"],
+            timeout=20,
+            stderr=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            text=True
+        )
+        if result.returncode == 0:
+            try:
+                import json
+                vpn_ip = json.loads(result.stdout).get('ip', 'unknown')
+                if vpn_ip != "unknown":
+                    print(f"  ✓ Got VPN IP: {vpn_ip}    ")
+                    break
+            except:
+                pass
+        time.sleep(5)
     
-    # STEP 5: Start proxy in namespace for crawler to use
-    print("\nSTEP 5: Starting HTTP proxy in namespace...")
-    if not start_proxy_in_namespace(ns_name, proxy_port=8888):
-        print("✗ Failed to start proxy")
+    if not vpn_ip or vpn_ip == "unknown":
+        print("✗ CRITICAL: VPN tunnel NEVER ESTABLISHED!")
+        print("  Check /tmp/vpn-vpn-ns.log")
         subprocess.run(["ip", "netns", "delete", ns_name], stderr=subprocess.DEVNULL)
         return False
     
-    # STEP 6: Verify system IP unchanged
-    print("\nSTEP 6: Verifying YOUR PC is unaffected...")
+    # STEP 5: Start SOCKS5 proxy
+    print("\nSTEP 5: Starting SOCKS5 proxy in namespace...")
+    if not start_proxy_in_namespace(ns_name, proxy_port=1080):
+        print("✗ Failed to start SOCKS5 proxy")
+        subprocess.run(["ip", "netns", "delete", ns_name], stderr=subprocess.DEVNULL)
+        return False
+    
+    # STEP 6: Verify your PC is PROTECTED (IP unchanged)
+    print("\nSTEP 6: Verifying YOUR PC is PROTECTED...")
     ip_after = check_public_ip()
     if ip_after:
         print(f"✓ Your public IP: {ip_after}")
@@ -799,24 +824,39 @@ def start_vpn_if_requested(options):
         print("⚠ Could not check")
         ip_after = "unknown"
     
+    # STEP 7: Final comparison
+    print("\nSTEP 7: FINAL VERIFICATION:")
+    print(f"  Your PC before: {ip_before}")
+    print(f"  Your PC after:  {ip_after}")
+    print(f"  VPN in ns:      {vpn_ip}")
+    
+    # Check 1: PC must stay same
     if ip_before != "unknown" and ip_after != "unknown":
-        if ip_before == ip_after:
-            print("✓ ✓ ✓ PERFECT! Your IP unchanged - PC protected!")
-        else:
-            print("✗ IP changed - namespace isolation failed!")
+        if ip_before != ip_after:
+            print("\n✗ CRITICAL: Your PC's IP CHANGED!")
+            print("  Namespace isolation FAILED")
             subprocess.run(["ip", "netns", "delete", ns_name], stderr=subprocess.DEVNULL)
             return False
+        print("  ✓ Your PC IP unchanged (PC protected)")
     
-    # Store VPN info for later use
+    # Check 2: VPN must be DIFFERENT (VPN working)
+    if ip_before != "unknown" and vpn_ip != "unknown":
+        if ip_before == vpn_ip:
+            print("\n✗ CRITICAL: VPN IP = Your IP!")
+            print("  VPN is NOT WORKING - same IP means no tunnel")
+            subprocess.run(["ip", "netns", "delete", ns_name], stderr=subprocess.DEVNULL)
+            return False
+        print("  ✓ ✓ ✓ VPN IP DIFFERENT - VPN IS WORKING!")
+    
+    # Success!
     runtime_state["vpn_namespace"] = ns_name
     runtime_state["vpn_running"] = True
     
     print("\n" + "=" * 50)
     print("✓ VPN NAMESPACE SETUP COMPLETE!")
-    print(f"  • Isolated namespace: {ns_name}")
-    print(f"  • SOCKS5 Proxy: socks5://192.168.100.2:1080")
-    print(f"  • Your PC: PROTECTED (still uses normal IP)")
-    print(f"  • Crawler: routes through VPN automatically")
+    print(f"  • Your PC IP: {ip_after} (isolated)")
+    print(f"  • VPN IP: {vpn_ip} (crawler uses this)")
+    print(f"  • SOCKS5: socks5://192.168.100.2:1080")
     print("=" * 50)
     
     return True
