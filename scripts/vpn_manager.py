@@ -797,11 +797,35 @@ class VPNManager:
 
         try:
             print(f"   Starting VPN tunnel: {config_file}")
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
-            if result.returncode != 0:
-                error_text = result.stderr.strip() or result.stdout.strip() or "unknown error"
-                print(f"   Failed to start {config_file}: {error_text}")
-                self.record_health_result(config_file, error_text)
+            # FIXED: Use Popen() for background process instead of run()
+            # With --daemon flag, OpenVPN should fork and return immediately
+            # But subprocess.run() waits for process completion, which blocks indefinitely
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                text=True,
+            )
+            
+            # Give OpenVPN a moment to daemonize and check for immediate errors
+            time.sleep(0.5)
+            
+            # Check if process exited immediately (indicates an error)
+            poll_result = process.poll()
+            if poll_result is not None and poll_result != 0:
+                # Process exited with error before daemonizing
+                error_tail = self._read_log_tail(log_path, 500) or f"OpenVPN exited with code {poll_result}"
+                print(f"   Failed to start {config_file}: {error_tail}")
+                self.record_health_result(config_file, error_tail)
+                return False
+            
+            # Check if PID file was created (indicates daemon started)
+            time.sleep(0.5)
+            if not os.path.exists(pid_path):
+                # Daemon didn't create PID file
+                error_tail = self._read_log_tail(log_path, 500) or "OpenVPN daemon did not create PID file"
+                print(f"   Failed to start {config_file}: {error_tail}")
+                self.record_health_result(config_file, error_tail)
                 return False
 
             self.vpn_processes[config_file] = {
