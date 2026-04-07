@@ -18,6 +18,10 @@ import xml.etree.ElementTree as ET
 import requests
 from bs4 import BeautifulSoup
 
+# Disable SSL verification warnings for public web crawling
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
 if __package__:
     from .indexing import index_page
     from .pagerank import compute_pagerank
@@ -630,6 +634,7 @@ class CrawlerService:
                 timeout=timeout or (self.proxy_timeout if proxies else self.request_timeout),
                 proxies=proxies,
                 headers=self.request_headers(),
+                verify=False,  # Disable SSL verification for public web crawling (safe for indexing)
             )
             if origin:
                 self.record_domain_request(origin, success=response.status_code < 500)
