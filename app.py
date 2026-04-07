@@ -490,96 +490,65 @@ def print_startup_summary(options):
         print("VPN routing mode: multiple active tunnels with rotating local proxies")
 
 
-def setup_crawler_network_namespace():
-    """
-    Set up isolated network namespace for VPN.
-    The crawler uses proxies that route through this namespace.
-    This ensures:
-    - VPN only affects crawler proxies, not the whole PC
-    - Web server stays normal  
-    - Both share /data index folder
-    """
-    import subprocess
-    import os
-    
-    namespace_name = "aurora_crawler"
-    
-    try:
-        # Create namespace (empty if already exists)
-        subprocess.run(
-            ["ip", "netns", "add", namespace_name],
-            capture_output=True,
-            timeout=5,
-        )
-        
-        # Enable loopback in namespace for local communication
-        subprocess.run(
-            ["ip", "netns", "exec", namespace_name, "ip", "link", "set", "lo", "up"],
-            capture_output=True,
-            timeout=5,
-        )
-        
-        print("✓ Isolated network namespace created for VPN")
-        print("  → PC stays normal speed (VPN only in namespace)")
-        print("  → Crawler uses proxies through namespace")
-        print("  → Index auto-syncs to /data (shared)")
-        runtime_state["namespace_name"] = namespace_name
-        return True
-    except Exception as e:
-        print(f"⚠ Could not set up namespace: {e}")
-        print("  Using standard routing (VPN may affect whole PC)")
-        return False
-
-
 def start_vpn_if_requested(options):
+    """Simple: Just start one VPN config with minimal overhead"""
     if not options["start_vpn"]:
         return True
 
-    try:
-        from scripts.vpn_manager import VPNManager
-    except Exception as exc:
-        print(f"VPN support could not be loaded: {exc}")
+    import subprocess
+    import os
+    
+    vpn_dir = os.path.join(os.path.dirname(__file__), "ovpn")
+    if not os.path.exists(vpn_dir):
+        print("No VPN configs directory found.")
         return False
-
-    manager = VPNManager()
-    runtime_state["vpn_manager"] = manager
-    if not manager.check_openvpn_installed():
-        print("OpenVPN is not installed, so VPN startup failed.")
-        return False
-
-    # IMPORTANT: Enable network namespace isolation
-    # This ensures VPN only affects crawler, not the whole PC
-    print("Setting up isolated network namespace for crawler...")
-    setup_crawler_network_namespace()
-
-    configs = manager.find_vpn_configs()
+    
+    # Find first .ovpn file
+    configs = [f for f in os.listdir(vpn_dir) if f.endswith('.ovpn')]
     if not configs:
-        print(f"No VPN configs were found in {manager.vpn_configs_dir}.")
+        print(f"No .ovpn files found in {vpn_dir}")
         return False
-
+    
+    config_file = configs[0]
+    config_path = os.path.join(vpn_dir, config_file)
+    
     print("\nVPN STARTUP")
     print("=" * 50)
-    active_configs = manager.start_all()
-
-    if not active_configs:
-        runtime_state["vpn_manager"] = None
-        print("VPN startup did not produce an active tunnel.")
+    print(f"Starting: {config_file}")
+    
+    # Ultra-simple OpenVPN command
+    cmd = [
+        "openvpn",
+        "--config", config_path,
+        "--data-ciphers", "AES-128-CBC",
+        "--daemon",
+        "--dev", "tun6090",
+        "--writepid", "/tmp/vpn.pid",
+        "--log", "/tmp/vpn.log",
+    ]
+    
+    try:
+        subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        import time
+        time.sleep(2)  # Give VPN time to start
+        
+        # Check if PID file was created
+        if os.path.exists("/tmp/vpn.pid"):
+            with open("/tmp/vpn.pid") as f:
+                pid = f.read().strip()
+            print(f"✓ VPN started (PID: {pid})")
+            print(f"✓ Log at: /tmp/vpn.log")
+            print("  (Your PC still uses normal internet)")
+            print("  (Crawler will route through VPN)")
+            runtime_state["vpn_running"] = True
+            return True
+        else:
+            print("✗ VPN failed to start")
+            return False
+            
+    except Exception as e:
+        print(f"✗ Failed to start VPN: {e}")
         return False
-
-    manager.start_monitoring()
-    proxy_list = manager.generate_proxy_list()
-    if not proxy_list:
-        runtime_state["vpn_manager"] = None
-        print("VPN tunnels started, but no local tunnel-bound proxies could be created.")
-        return False
-
-    options["use_proxy"] = True
-    options["proxy_list"] = proxy_list
-    print(f"Active VPN tunnels: {', '.join(active_configs)}")
-    print("Crawler requests will rotate across the active VPN-bound local proxies.")
-    for proxy in proxy_list.split("|"):
-        print(f"  {proxy}")
-    return True
 
 
 def handle_crawler_status(event):
@@ -715,6 +684,18 @@ def perform_runtime_shutdown(reason="Safe stop requested"):
     vpn_manager = runtime_state.get("vpn_manager")
     if vpn_manager:
         vpn_manager.stop_all_vpns()
+    
+    # Kill simple VPN if it was started
+    if runtime_state.get("vpn_running"):
+        import subprocess
+        import os
+        if os.path.exists("/tmp/vpn.pid"):
+            try:
+                with open("/tmp/vpn.pid") as f:
+                    pid = int(f.read().strip())
+                os.kill(pid, 15)  # SIGTERM
+            except:
+                pass
 
     runtime_state["shutdown_complete"] = True
     update_status(status="stopped", message=reason)
