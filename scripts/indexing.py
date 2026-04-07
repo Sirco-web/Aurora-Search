@@ -66,6 +66,15 @@ def index_page(webpage, webpage_url):
         description = text_content[:200] + "..." if len(text_content) > 200 else text_content
 
     text_content = webpage.get_text(separator=" ", strip=True)
+    
+    # Store full content (up to 100KB to avoid huge files)
+    # Truncate to keep file sizes manageable
+    max_content_chars = 100000
+    full_content = text_content[:max_content_chars]
+    
+    # Word count from ORIGINAL text before stemming
+    original_word_count = len(text_content.split())
+    
     tokens = word_tokenize(text_content.lower())
     filtered_words = [
         _stemmer.stem(word)
@@ -77,6 +86,8 @@ def index_page(webpage, webpage_url):
         "url": webpage_url,
         "title": title,
         "description": description,
-        "words": filtered_words,
+        "content": full_content,              # NEW: Store full content for Panda/Penguin scoring
+        "words": filtered_words,              # Stemmed words for inverted index
+        "word_count": original_word_count,    # NEW: Actual word count for Panda
         "content_fingerprint": hashlib.sha1(text_content.encode("utf-8", errors="ignore")).hexdigest(),
     }
