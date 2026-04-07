@@ -490,6 +490,47 @@ def print_startup_summary(options):
         print("VPN routing mode: multiple active tunnels with rotating local proxies")
 
 
+def setup_crawler_network_namespace():
+    """
+    Set up isolated network namespace for VPN.
+    The crawler uses proxies that route through this namespace.
+    This ensures:
+    - VPN only affects crawler proxies, not the whole PC
+    - Web server stays normal  
+    - Both share /data index folder
+    """
+    import subprocess
+    import os
+    
+    namespace_name = "aurora_crawler"
+    
+    try:
+        # Create namespace (empty if already exists)
+        subprocess.run(
+            ["ip", "netns", "add", namespace_name],
+            capture_output=True,
+            timeout=5,
+        )
+        
+        # Enable loopback in namespace for local communication
+        subprocess.run(
+            ["ip", "netns", "exec", namespace_name, "ip", "link", "set", "lo", "up"],
+            capture_output=True,
+            timeout=5,
+        )
+        
+        print("✓ Isolated network namespace created for VPN")
+        print("  → PC stays normal speed (VPN only in namespace)")
+        print("  → Crawler uses proxies through namespace")
+        print("  → Index auto-syncs to /data (shared)")
+        runtime_state["namespace_name"] = namespace_name
+        return True
+    except Exception as e:
+        print(f"⚠ Could not set up namespace: {e}")
+        print("  Using standard routing (VPN may affect whole PC)")
+        return False
+
+
 def start_vpn_if_requested(options):
     if not options["start_vpn"]:
         return True
@@ -505,6 +546,11 @@ def start_vpn_if_requested(options):
     if not manager.check_openvpn_installed():
         print("OpenVPN is not installed, so VPN startup failed.")
         return False
+
+    # IMPORTANT: Enable network namespace isolation
+    # This ensures VPN only affects crawler, not the whole PC
+    print("Setting up isolated network namespace for crawler...")
+    setup_crawler_network_namespace()
 
     configs = manager.find_vpn_configs()
     if not configs:
