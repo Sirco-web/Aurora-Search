@@ -689,6 +689,42 @@ def setup_vpn_namespace():
     
     print(f"  ✓ Veth pair configured (host: 192.168.100.1, ns: 192.168.100.2)")
     
+    # Enable namespace to reach outside world
+    print("  [NS] Enabling internet access from namespace...")
+    
+    # Enable IP forwarding on host
+    subprocess.run(["sysctl", "-w", "net.ipv4.ip_forward=1"], 
+                   stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
+    
+    # Add default route in namespace to reach host
+    subprocess.run(["ip", "netns", "exec", ns_name, "ip", "route", "add", "default", "via", "192.168.100.1"],
+                   stderr=subprocess.DEVNULL)
+    
+    # Get default network interface on host
+    result = subprocess.run(["ip", "route", "show", "default"], 
+                           stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+    default_iface = None
+    if result.returncode == 0:
+        # Parse something like: default via 172.17.0.1 dev eth0
+        parts = result.stdout.strip().split()
+        if "dev" in parts:
+            default_iface = parts[parts.index("dev") + 1]
+    
+    if default_iface:
+        # Enable NAT on host's default interface
+        subprocess.run(["iptables", "-t", "nat", "-A", "POSTROUTING", "-o", default_iface, "-j", "MASQUERADE"],
+                       stderr=subprocess.DEVNULL)
+        
+        # Enable forward rules
+        subprocess.run(["iptables", "-A", "FORWARD", "-i", "veth-host", "-j", "ACCEPT"],
+                       stderr=subprocess.DEVNULL)
+        subprocess.run(["iptables", "-A", "FORWARD", "-o", "veth-host", "-j", "ACCEPT"],
+                       stderr=subprocess.DEVNULL)
+        
+        print(f"  ✓ IP forwarding enabled (NAT on {default_iface})")
+    else:
+        print(f"  ⚠ Could not detect interface for NAT (namespace may have limited access)")
+    
     return ns_name
 
 def test_vpn_config_manually(config_path, timeout=30):
@@ -1412,6 +1448,14 @@ def perform_runtime_shutdown(reason="Safe stop requested"):
                 os.kill(pid, 15)  # SIGTERM
             except:
                 pass
+        
+        # Clean up iptables rules
+        subprocess.run(["iptables", "-t", "nat", "-D", "POSTROUTING", "-j", "MASQUERADE"],
+                       stderr=subprocess.DEVNULL)
+        subprocess.run(["iptables", "-D", "FORWARD", "-i", "veth-host", "-j", "ACCEPT"],
+                       stderr=subprocess.DEVNULL)
+        subprocess.run(["iptables", "-D", "FORWARD", "-o", "veth-host", "-j", "ACCEPT"],
+                       stderr=subprocess.DEVNULL)
         
         # Delete namespace 
         subprocess.run(["ip", "netns", "delete", ns_name], stderr=subprocess.DEVNULL)
