@@ -9,7 +9,12 @@ crawl_limit = 100000
 # Number of concurrent worker threads (higher = faster crawling, but more resource usage)
 num_workers = 80
 # Request timeout in seconds
-request_timeout = 15
+request_timeout = 8
+# Retry logic: Failed requests retry up to 3 times with exponential backoff (1s, 2s, 4s)
+# Circuit breaker: Domains that timeout repeatedly are temporarily blocked to save resources
+#   - Connection errors: 3 failures → 15-min block
+#   - Timeouts: 5 failures → 10-min block
+# This helps the crawler focus on reachable sites while occasional network hiccups don't completely block crawling
 # Delay between requests (random range: min_delay to max_delay) - be respectful to servers
 min_delay = 1
 max_delay = 2
@@ -182,4 +187,4 @@ proxy_list =
 # Rotate proxy on each request (true/false)
 rotate_proxy = true
 # Timeout for proxy connections in seconds
-proxy_timeout = 15
+proxy_timeout = 10

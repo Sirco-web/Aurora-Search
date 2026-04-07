@@ -234,6 +234,13 @@ class CrawlerService:
         )
         self.proxies = self._load_proxies()
         self.proxy_index = 0
+        
+        # NEW: Session for connection pooling + circuit breaker for failed domains
+        self.session = requests.Session()
+        self.session.headers.update(self.request_headers())
+        self.domain_failure_tracker = {}  # Tracks consecutive failures per domain
+        self.domain_circuit_breaker = {}  # Temporarily blocks consistently failing domains
+        
         self.tracking_query_prefixes = tuple(
             value.lower() for value in self._resolve_list("Crawler", "tracking_query_prefixes", DEFAULT_TRACKING_QUERY_PREFIXES)
         )
@@ -624,25 +631,108 @@ class CrawlerService:
             self.domain_next_request_at[origin] = time.time() + delay
 
     def request_url(self, url, proxies=None, timeout=None):
+        """
+        Fetch URL with intelligent retry logic, timeouts, and circuit breaker.
+        
+        Features:
+        - Exponential backoff retries (1s, 2s, 4s)
+        - Adaptive timeouts (8s default, 12s max)
+        - Circuit breaker for consistently failing domains
+        - Connection reuse via session
+        """
         origin = self.get_origin(url)
+        
+        # Check circuit breaker: skip if domain is temporarily blocked
+        if origin and self.domain_circuit_breaker.get(origin):
+            circuit_info = self.domain_circuit_breaker[origin]
+            if time.time() < circuit_info['until']:
+                raise requests.RequestException(
+                    f"Skipping {origin}: Circuit breaker active (failed {circuit_info['failures']} times)"
+                )
+            else:
+                # Circuit breaker expired, reset
+                del self.domain_circuit_breaker[origin]
+                if origin in self.domain_failure_tracker:
+                    del self.domain_failure_tracker[origin]
+        
         if origin and not self.wait_for_domain_slot(origin):
             raise requests.RequestException("crawler stop requested while waiting for domain delay")
 
-        try:
-            response = requests.get(
-                url,
-                timeout=timeout or (self.proxy_timeout if proxies else self.request_timeout),
-                proxies=proxies,
-                headers=self.request_headers(),
-                verify=False,  # Disable SSL verification for public web crawling (safe for indexing)
-            )
-            if origin:
-                self.record_domain_request(origin, success=response.status_code < 500)
-            return response
-        except requests.RequestException:
-            if origin:
-                self.record_domain_request(origin, success=False)
-            raise
+        # Determine timeout: shorter than default for faster failure detection
+        if timeout is None:
+            timeout = 8 if not proxies else 10  # Reduced from 10 and 15
+        
+        max_retries = 3
+        retry_delays = [1, 2, 4]  # seconds: exponential backoff
+        
+        last_exception = None
+        
+        for attempt in range(max_retries):
+            try:
+                response = self.session.get(
+                    url,
+                    timeout=timeout,
+                    proxies=proxies,
+                    verify=False,  # SSL verification disabled for public crawling
+                    allow_redirects=True,
+                )
+                
+                # Success: reset failure counters
+                if origin:
+                    if origin in self.domain_failure_tracker:
+                        del self.domain_failure_tracker[origin]
+                    self.record_domain_request(origin, success=response.status_code < 500)
+                
+                return response
+                
+            except requests.Timeout as e:
+                # Timeout - retry with backoff
+                last_exception = e
+                if attempt < max_retries - 1:
+                    wait_time = retry_delays[attempt]
+                    if not self.sleep_with_stop(wait_time):
+                        raise requests.RequestException("Crawler stop requested during retry backoff")
+                else:
+                    # Final timeout after retries - log domain failure
+                    if origin:
+                        failures = self.domain_failure_tracker.get(origin, 0) + 1
+                        self.domain_failure_tracker[origin] = failures
+                        self.record_domain_request(origin, success=False)
+                        
+                        # Activate circuit breaker after 5 consecutive failures
+                        if failures >= 5:
+                            self.domain_circuit_breaker[origin] = {
+                                'until': time.time() + 600,  # Block for 10 minutes
+                                'failures': failures,
+                            }
+                            self.log(f"   ⚠ Circuit breaker: {origin} blocked (5+ timeouts)")
+            
+            except (requests.ConnectionError, requests.RequestException) as e:
+                # Connection error - likely domain is down or unreachable
+                last_exception = e
+                if origin:
+                    failures = self.domain_failure_tracker.get(origin, 0) + 1
+                    self.domain_failure_tracker[origin] = failures
+                    self.record_domain_request(origin, success=False)
+                    
+                    # Faster circuit breaker for connection errors (domain unreachable)
+                    if failures >= 3:
+                        self.domain_circuit_breaker[origin] = {
+                            'until': time.time() + 900,  # Block for 15 minutes
+                            'failures': failures,
+                        }
+                        self.log(f"   ⚠ Circuit breaker: {origin} blocked (unreachable)")
+                
+                if attempt < max_retries - 1:
+                    wait_time = retry_delays[attempt]
+                    if not self.sleep_with_stop(wait_time):
+                        raise requests.RequestException("Crawler stop requested during retry backoff")
+        
+        # All retries exhausted
+        if last_exception:
+            raise last_exception
+        else:
+            raise requests.RequestException(f"Failed to fetch {url} after {max_retries} attempts")
 
     def should_skip_url(self, url):
         """Check if a URL should be skipped based on various filters."""
