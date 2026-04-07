@@ -691,6 +691,75 @@ def setup_vpn_namespace():
     
     return ns_name
 
+def test_vpn_config_manually(config_path, timeout=30):
+    """Test if a VPN config works (manual test before namespace) - returns True if works"""
+    print(f"  [PREFLIGHT] Testing config: {os.path.basename(config_path)}...", end=' ')
+    
+    result = subprocess.run(
+        ["timeout", str(timeout), "openvpn", "--config", config_path, "--daemon", 
+         "--log", "/tmp/openvpn-test.log"],
+        stderr=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        timeout=timeout + 5
+    )
+    
+    # Check if it started
+    time.sleep(2)
+    result = subprocess.run(
+        ["curl", "-s", "--max-time", "10", "https://api.ipify.org?format=json"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        timeout=15
+    )
+    
+    if result.returncode == 0:
+        try:
+            import json
+            data = json.loads(result.stdout)
+            if "ip" in data:
+                print(f"✓ WORKS (IP: {data['ip']})")
+                # Kill test VPN
+                subprocess.run(["pkill", "-f", f"openvpn.*{os.path.basename(config_path)}"],
+                              stderr=subprocess.DEVNULL)
+                time.sleep(1)
+                return True
+        except:
+            pass
+    
+    print("✗ FAILED (no connection)")
+    subprocess.run(["pkill", "-f", "openvpn"], stderr=subprocess.DEVNULL)
+    return False
+
+def find_working_vpn_config(vpn_dir):
+    """Find first working VPN config - skip broken ones"""
+    configs = [f for f in os.listdir(vpn_dir) if f.endswith('.ovpn')]
+    
+    if not configs:
+        print(f"✗ No .ovpn files found in {vpn_dir}")
+        return None
+    
+    print(f"\n📋 Found {len(configs)} VPN config(s). Testing for working tunnel...")
+    print("=" * 50)
+    
+    for config_file in configs:
+        config_path = os.path.join(vpn_dir, config_file)
+        
+        # Test this config
+        if test_vpn_config_manually(config_path, timeout=30):
+            print(f"✓ Using config: {config_file}")
+            return config_path
+        
+        time.sleep(1)
+    
+    print("\n✗ No working VPN configs found. All tested configs failed.")
+    print("  Possible issues:")
+    print("  • Cipher mismatch (check cipher in .ovpn file)")
+    print("  • VPN server unavailable")
+    print("  • Network connectivity issue")
+    print("  • Invalid credentials in .ovpn")
+    return None
+
 def start_vpn_in_namespace(ns_name, config_path):
     """Start OpenVPN inside the network namespace"""
     import subprocess
@@ -870,7 +939,35 @@ if __name__ == '__main__':
         print(f"  ✗ SOCKS5 proxy failed to start")
         return False
 
-def start_vpn_with_docker(config_path, ip_before):
+def find_working_vpn_config_docker(vpn_dir, ip_before):
+    """Try to find working VPN config using Docker - tests each config"""
+    configs = [f for f in os.listdir(vpn_dir) if f.endswith('.ovpn')]
+    
+    if not configs:
+        print(f"✗ No .ovpn files found in {vpn_dir}")
+        return None
+    
+    print(f"\n📋 Found {len(configs)} VPN config(s). Testing in Docker...")
+    print("=" * 50)
+    
+    for idx, config_file in enumerate(configs, 1):
+        config_path = os.path.join(vpn_dir, config_file)
+        print(f"\n[{idx}/{len(configs)}] Testing: {config_file}...")
+        
+        # Try this config in Docker (timeout=30 for quick testing per config)
+        vpn_ip = start_vpn_with_docker(config_path, ip_before, timeout=30)
+        
+        if vpn_ip:  # Returns VPN IP if successful
+            print(f"✓ SUCCESS! Using config: {config_file}")
+            return vpn_ip
+        
+        print(f"✗ Config failed, trying next...")
+        time.sleep(1)
+    
+    print("\n✗ No working VPN configs found in Docker.")
+    return None
+
+def start_vpn_with_docker(config_path, ip_before, timeout=60):
     """Start VPN using Docker container - reuses container/image, no waste"""
     print("\n🐳 VPN SETUP WITH DOCKER CONTAINER")
     print("=" * 50)
@@ -888,10 +985,14 @@ def start_vpn_with_docker(config_path, ip_before):
         return None
     
     # STEP 3: Test VPN tunnel - MUST GET DIFFERENT IP (VPN working = different IP)
-    print("\nSTEP 3: Testing VPN tunnel (waiting up to 60 seconds for tunnel...)...")
+    print(f"\nSTEP 3: Testing VPN tunnel (waiting up to {timeout} seconds for tunnel...)...")
     vpn_ip = None
-    for attempt in range(12):  # Try for up to 60 seconds
-        print(f"  Attempt {attempt + 1}/12...", end='\r')
+    max_attempts = timeout // 5
+    for attempt in range(max_attempts):
+        if timeout <= 40:  # Shorter testing for config loop
+            print(f"  Attempt {attempt + 1}/{max_attempts}...", end='\r')
+        else:
+            print(f"  Attempt {attempt + 1}/{max_attempts}...")
         vpn_ip = test_vpn_docker_tunnel()
         if vpn_ip:
             print(f"  ✓ Got VPN IP: {vpn_ip}    ")
@@ -899,8 +1000,7 @@ def start_vpn_with_docker(config_path, ip_before):
         time.sleep(5)
     
     if not vpn_ip:
-        print("✗ CRITICAL: VPN tunnel NEVER ESTABLISHED!")
-        print("  Check Docker logs: docker logs aurora-vpn")
+        print("✗ VPN tunnel FAILED in this container")
         subprocess.run(["docker", "rm", "-f", "aurora-vpn"], stderr=subprocess.DEVNULL)
         return None
     
@@ -937,18 +1037,7 @@ def start_vpn_with_docker(config_path, ip_before):
             return None
         print("  ✓ ✓ ✓ VPN IP DIFFERENT - VPN IS WORKING!")
     
-    runtime_state["vpn_container"] = "aurora-vpn"
-    runtime_state["vpn_running"] = True
-    os.environ["AURORA_VPN_PROXY"] = "socks5://127.0.0.1:1080"
-    
-    print("\n" + "=" * 50)
-    print("✓ VPN DOCKER SETUP COMPLETE!")
-    print(f"  • Your PC IP: {ip_after} (protected)")
-    print(f"  • VPN IP: {vpn_ip} (crawler uses)")
-    print(f"  • SOCKS5: socks5://127.0.0.1:1080")
-    print(f"  • Container: aurora-vpn (reused, no waste)")
-    print("=" * 50)
-    
+    # Return VPN IP on success (caller handles final setup messages)
     return vpn_ip
 
 def start_vpn_if_requested(options):
@@ -1007,34 +1096,57 @@ def start_vpn_if_requested(options):
     
     # Call appropriate setup
     if choice == "1":
-        # Docker approach
+        # Docker approach - try each config until one works
         if not check_docker_available():
             print("\n✗ Docker is not running. Please start Docker and try again.")
             return False
         
-        result = start_vpn_with_docker(config_path, ip_before)
-        return result is not None
+        # Try each VPN config in Docker until one works
+        result = find_working_vpn_config_docker(vpn_dir, ip_before)
+        if result:
+            # Setup was successful, result is the VPN IP
+            runtime_state["vpn_container"] = "aurora-vpn"
+            runtime_state["vpn_running"] = True
+            os.environ["AURORA_VPN_PROXY"] = "socks5://127.0.0.1:1080"
+            
+            print("\n" + "=" * 50)
+            print("✓ VPN DOCKER SETUP COMPLETE!")
+            print(f"  • Docker container: aurora-vpn (reused, no waste)")
+            print(f"  • SOCKS5 proxy: socks5://127.0.0.1:1080")
+            print("=" * 50)
+            return True
+        else:
+            return False
     
     else:
         # Namespace approach
         print("\n🔐 VPN SETUP WITH NAMESPACE ISOLATION")
         print("=" * 50)
         
-        # STEP 2: Create isolated namespace
+        # PREFLIGHT: Find working config
+        print("\n🔍 PREFLIGHT: Testing VPN configs for working tunnel...")
+        config_path = find_working_vpn_config(vpn_dir)
+        if not config_path:
+            print("\n✗ No working VPN configs available.")
+            print("  Please test your VPN configs manually:")
+            print("  $ sudo openvpn --config /path/to/file.ovpn")
+            return False
+        
+        # STEP 1: Create isolated namespace
         print("\nSTEP 1: Creating isolated network namespace...")
         ns_name = setup_vpn_namespace()
         if not ns_name:
             print("✗ Failed to create namespace")
             return False
         
-        # STEP 3: Start VPN in namespace
+        # STEP 2: Start VPN in namespace
         print("\nSTEP 2: Starting VPN in isolated namespace...")
         if not start_vpn_in_namespace(ns_name, config_path):
             print("✗ Failed to start VPN in namespace")
             subprocess.run(["ip", "netns", "delete", ns_name], stderr=subprocess.DEVNULL)
             return False
         
-        # STEP 4: Test VPN tunnel
+        # STEP 3: Test VPN tunnel
         print("\nSTEP 3: Testing VPN tunnel (waiting up to 60 seconds for tunnel...)...")
         vpn_ip = None
         for attempt in range(12):
@@ -1060,18 +1172,19 @@ def start_vpn_if_requested(options):
         
         if not vpn_ip or vpn_ip == "unknown":
             print("✗ CRITICAL: VPN tunnel NEVER ESTABLISHED!")
-            print("  Check /tmp/vpn-vpn-ns.log for details")
+            print("  This config was tested manually but failed in namespace.")
+            print("  Try a different VPN config.")
             subprocess.run(["ip", "netns", "delete", ns_name], stderr=subprocess.DEVNULL)
             return False
         
-        # STEP 5: Start SOCKS5 proxy
+        # STEP 4: Start SOCKS5 proxy
         print("\nSTEP 4: Starting SOCKS5 proxy in namespace...")
         if not start_proxy_in_namespace(ns_name, proxy_port=1080):
             print("✗ Failed to start SOCKS5 proxy")
             subprocess.run(["ip", "netns", "delete", ns_name], stderr=subprocess.DEVNULL)
             return False
         
-        # STEP 6: Verify your PC is PROTECTED
+        # STEP 5: Verify your PC is PROTECTED
         print("\nSTEP 5: Verifying YOUR PC is PROTECTED...")
         ip_after = check_public_ip()
         if ip_after:
@@ -1080,7 +1193,7 @@ def start_vpn_if_requested(options):
             print("⚠ Could not check")
             ip_after = "unknown"
         
-        # STEP 7: Final comparison
+        # STEP 6: Final comparison
         print("\nSTEP 6: FINAL VERIFICATION:")
         print(f"  Your PC before: {ip_before}")
         print(f"  Your PC after:  {ip_after}")
