@@ -1281,13 +1281,20 @@ class CrawlerService:
                 break
 
             try:
-                current_url = self.queue.get(timeout=2)
+                # FIXED: Shorter timeout so workers check stop_event more frequently
+                current_url = self.queue.get(timeout=0.5)
             except Empty:
+                if self.stop_event.is_set():
+                    break
                 if self.maybe_refill_queue():
                     continue
                 if self.continuous_mode:
-                    self.sleep_with_stop(1)
+                    if not self.sleep_with_stop(0.5):  # Check stop more frequently
+                        break
                     continue
+                break
+
+            if self.stop_event.is_set():
                 break
 
             try:
@@ -1298,6 +1305,9 @@ class CrawlerService:
 
                 self.log(f"Crawling: {current_url}")
                 if not self.sleep_with_stop(random.uniform(self.min_delay, self.max_delay)):
+                    break
+
+                if self.stop_event.is_set():
                     break
 
                 proxies = self.get_next_proxy()
@@ -1389,15 +1399,35 @@ class CrawlerService:
 
             try:
                 for future in futures:
-                    future.result()
+                    # FIXED: Use timeout so Ctrl+C doesn't block indefinitely
+                    # Timeout set to 0.5 seconds - if a worker hangs, we don't wait long
+                    try:
+                        future.result(timeout=0.5)
+                    except TimeoutError:
+                        # Worker didn't finish in 0.5s, but that's OK
+                        # The stop_event is set, so it will exit soon
+                        pass
             except KeyboardInterrupt:
-                self.log("Crawler interrupted; shutting down.")
+                self.log("\n⚡ STOP SIGNAL: Ctrl+C pressed - initiating immediate shutdown...")
                 self.stop_event.set()
+                
+                # FIXED: Force executor shutdown without waiting for all threads
+                # We already set stop_event, so threads will exit naturally
+                # Don't wait around for threads to finish - just shut down NOW
+                executor.shutdown(wait=False)
+                
+                # FIXED: Cancel any pending futures
+                for future in futures:
+                    future.cancel()
+                
+                self.log("✓ Crawler stop signal sent to all workers")
+                self.log("✓ Saving final snapshot before exit...")
 
+        # Save state one last time before exiting
         self.log("Crawler is finishing in-flight work and saving the last snapshot.")
         self.maybe_save_snapshot(reason="final")
         self.publish_status("stopped", "Crawler service stopped.")
-        self.log("Crawler service stopped.")
+        self.log("✓ Crawler service stopped gracefully.")
 
 
 def run_crawler_service(
