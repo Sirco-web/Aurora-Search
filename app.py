@@ -696,8 +696,10 @@ def test_vpn_config_manually(config_path, timeout=30):
     print(f"  [PREFLIGHT] Testing config: {os.path.basename(config_path)}...", end=' ')
     
     result = subprocess.run(
-        ["timeout", str(timeout), "openvpn", "--config", config_path, "--daemon", 
-         "--log", "/tmp/openvpn-test.log"],
+        ["timeout", str(timeout), "openvpn", "--config", config_path, 
+         "--data-ciphers", "AES-128-CBC",
+         "--data-ciphers-fallback", "AES-128-CBC",
+         "--daemon", "--log", "/tmp/openvpn-test.log"],
         stderr=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         timeout=timeout + 5
@@ -772,6 +774,7 @@ def start_vpn_in_namespace(ns_name, config_path):
         "openvpn",
         "--config", config_path,
         "--data-ciphers", "AES-128-CBC",
+        "--data-ciphers-fallback", "AES-128-CBC",
         "--daemon",
         "--dev", "tun0",
         "--writepid", f"/tmp/vpn-{ns_name}.pid",

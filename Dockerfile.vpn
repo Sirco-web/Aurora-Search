@@ -116,4 +116,4 @@ EOF
 RUN chmod +x /socks5-proxy.py
 
 # Default startup: run OpenVPN and SOCKS5 proxy
-CMD ["bash", "-c", "openvpn --config /etc/openvpn/config/vpn.ovpn --data-ciphers AES-128-CBC --redirect-gateway def1 & python3 /socks5-proxy.py"]
+CMD ["bash", "-c", "openvpn --config /etc/openvpn/config/vpn.ovpn --data-ciphers AES-128-CBC --data-ciphers-fallback AES-128-CBC --redirect-gateway def1 & python3 /socks5-proxy.py"]
