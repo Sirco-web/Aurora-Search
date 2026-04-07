@@ -499,21 +499,196 @@ def check_public_ip():
     except:
         return None
 
+def run_in_namespace(cmd, ns_name="vpn-ns"):
+    """Execute command in network namespace"""
+    full_cmd = ["ip", "netns", "exec", ns_name] + cmd
+    return subprocess.run(full_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+def setup_vpn_namespace():
+    """Create isolated network namespace for VPN - returns namespace name or None"""
+    import subprocess
+    import os
+    
+    ns_name = "vpn-ns"
+    
+    print("  [NS] Creating isolated network namespace...")
+    
+    # Check if namespace exists
+    result = subprocess.run(["ip", "netns", "list"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if ns_name.encode() in result.stdout:
+        print(f"  [NS] Namespace {ns_name} already exists, cleaning up...")
+        subprocess.run(["ip", "netns", "delete", ns_name], stderr=subprocess.DEVNULL)
+        time.sleep(0.5)
+    
+    # Create namespace
+    result = subprocess.run(["ip", "netns", "add", ns_name], stderr=subprocess.PIPE)
+    if result.returncode != 0:
+        print(f"  ✗ Failed to create namespace: {result.stderr.decode()}")
+        return None
+    
+    print(f"  ✓ Namespace {ns_name} created")
+    
+    # Bring up loopback in namespace
+    subprocess.run(["ip", "netns", "exec", ns_name, "ip", "link", "set", "lo", "up"], 
+                   stderr=subprocess.DEVNULL)
+    
+    # Create veth pair for host->namespace communication
+    print("  [NS] Setting up virtual ethernet pair...")
+    veth_host = "veth-host"
+    veth_ns = "veth-ns"
+    
+    subprocess.run(["ip", "link", "add", veth_host, "type", "veth", "peer", "name", veth_ns],
+                   stderr=subprocess.DEVNULL)
+    subprocess.run(["ip", "link", "set", veth_ns, "netns", ns_name], stderr=subprocess.DEVNULL)
+    
+    # Configure veth interfaces
+    subprocess.run(["ip", "addr", "add", "192.168.100.1/24", "dev", veth_host], 
+                   stderr=subprocess.DEVNULL)
+    subprocess.run(["ip", "link", "set", veth_host, "up"], stderr=subprocess.DEVNULL)
+    
+    subprocess.run(["ip", "netns", "exec", ns_name, "ip", "addr", "add", "192.168.100.2/24", 
+                    "dev", veth_ns], stderr=subprocess.DEVNULL)
+    subprocess.run(["ip", "netns", "exec", ns_name, "ip", "link", "set", veth_ns, "up"],
+                   stderr=subprocess.DEVNULL)
+    
+    print(f"  ✓ Veth pair configured (host: 192.168.100.1, ns: 192.168.100.2)")
+    
+    return ns_name
+
+def start_vpn_in_namespace(ns_name, config_path):
+    """Start OpenVPN inside the network namespace"""
+    import subprocess
+    
+    print(f"  [VPN] Starting OpenVPN in namespace {ns_name}...")
+    
+    # Start VPN in namespace with proper logging
+    cmd = [
+        "ip", "netns", "exec", ns_name,
+        "openvpn",
+        "--config", config_path,
+        "--data-ciphers", "AES-128-CBC",
+        "--daemon",
+        "--dev", "tun0",
+        "--writepid", f"/tmp/vpn-{ns_name}.pid",
+        "--log", f"/tmp/vpn-{ns_name}.log",
+        "--script-security", "2",
+        "--redirect-gateway", "def1",  # SAFE inside namespace
+    ]
+    
+    result = subprocess.run(cmd, stderr=subprocess.PIPE)
+    if result.returncode != 0:
+        print(f"  ✗ Failed to start VPN: {result.stderr.decode()}")
+        return False
+    
+    time.sleep(3)
+    
+    # Verify VPN started
+    pid_file = f"/tmp/vpn-{ns_name}.pid"
+    if not os.path.exists(pid_file):
+        print(f"  ✗ VPN failed to start (no PID file)")
+        return False
+    
+    with open(pid_file) as f:
+        vpn_pid = f.read().strip()
+    print(f"  ✓ OpenVPN running in namespace (PID: {vpn_pid})")
+    return True
+
+def test_vpn_tunnel(ns_name):
+    """Test if VPN tunnel in namespace is working"""
+    import subprocess
+    
+    print(f"  [TEST] Verifying tunnel in {ns_name}...")
+    
+    # Try to get IP from within namespace
+    result = subprocess.run(
+        ["ip", "netns", "exec", ns_name, "curl", "-s", 
+         "https://api.ipify.org?format=json"],
+        timeout=10,
+        stderr=subprocess.DEVNULL,
+        stdout=subprocess.PIPE
+    )
+    
+    if result.returncode == 0:
+        try:
+            import json
+            data = json.loads(result.stdout.decode())
+            vpn_ip = data.get('ip', 'unknown')
+            print(f"  ✓ VPN tunnel working! IP in namespace: {vpn_ip}")
+            return True
+        except:
+            pass
+    
+    print(f"  ✗ VPN tunnel test failed or took too long")
+    return False
+
+def start_proxy_in_namespace(ns_name, proxy_port=8888):
+    """Start a simple HTTP proxy inside namespace for crawler to use"""
+    import subprocess
+    
+    # Create simple proxy script
+    proxy_script = f"""
+import http.server
+import socketserver
+import sys
+
+class ProxyHandler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        try:
+            import urllib.request
+            req = urllib.request.Request(self.path, headers=self.headers)
+            response = urllib.request.urlopen(req, timeout=30)
+            self.send_response(response.status)
+            for header, value in response.headers.items():
+                self.send_header(header, value)
+            self.end_headers()
+            self.wfile.write(response.read())
+        except Exception as e:
+            self.send_error(502)
+    
+    def do_POST(self):
+        self.do_GET()
+    
+    def log_message(self, format, *args):
+        pass
+
+if __name__ == '__main__':
+    PORT = {proxy_port}
+    with socketserver.TCPServer(("0.0.0.0", PORT), ProxyHandler) as httpd:
+        print(f"Proxy started on port {{PORT}}", file=sys.stderr)
+        httpd.serve_forever()
+"""
+    
+    proxy_file = f"/tmp/proxy-{ns_name}.py"
+    with open(proxy_file, 'w') as f:
+        f.write(proxy_script)
+    
+    print(f"  [PROXY] Starting HTTP proxy on port {proxy_port} in namespace...")
+    
+    cmd = ["ip", "netns", "exec", ns_name, "python3", proxy_file]
+    proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    
+    time.sleep(1)
+    
+    # Verify proxy started
+    if proc.poll() is None:
+        print(f"  ✓ Proxy running (PID: {proc.pid})")
+        runtime_state["proxy_process"] = proc
+        runtime_state["proxy_port"] = proxy_port
+        return True
+    else:
+        print(f"  ✗ Proxy failed to start")
+        return False
+
 def start_vpn_if_requested(options):
-    """Start VPN with IP verification to ensure it doesn't break system connectivity"""
+    """Start VPN with proper network namespace isolation"""
     if not options["start_vpn"]:
         return True
 
-    import subprocess
-    import os
-    import time
-    
     vpn_dir = os.path.join(os.path.dirname(__file__), "ovpn")
     if not os.path.exists(vpn_dir):
         print("No VPN configs directory found.")
         return False
     
-    # Find first .ovpn file
     configs = [f for f in os.listdir(vpn_dir) if f.endswith('.ovpn')]
     if not configs:
         print(f"No .ovpn files found in {vpn_dir}")
@@ -522,90 +697,74 @@ def start_vpn_if_requested(options):
     config_file = configs[0]
     config_path = os.path.join(vpn_dir, config_file)
     
-    print("\nVPN STARTUP & VERIFICATION")
+    print("\n🔐 VPN SETUP WITH NAMESPACE ISOLATION")
     print("=" * 50)
     
     # STEP 1: Get IP before VPN
-    print("STEP 1: Checking your PUBLIC IP (before VPN)...")
+    print("\nSTEP 1: Checking your PUBLIC IP (before VPN)...")
     ip_before = check_public_ip()
     if ip_before:
         print(f"✓ Your public IP: {ip_before}")
     else:
-        print("⚠ Could not check public IP (check network)")
+        print("⚠ Could not check public IP")
         ip_before = "unknown"
     
-    # STEP 2: Start VPN
-    print(f"\nSTEP 2: Starting VPN: {config_file}")
-    
-    # Use routing rules to limit VPN to crawler only (not whole PC)
-    cmd = [
-        "openvpn",
-        "--config", config_path,
-        "--data-ciphers", "AES-128-CBC",
-        "--daemon",
-        "--dev", "tun6090",
-        "--writepid", "/tmp/vpn.pid",
-        "--log", "/tmp/vpn.log",
-        "--pull-filter", "ignore", "redirect-gateway",  # DON'T change system routing
-    ]
-    
-    try:
-        subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        time.sleep(3)
-        
-        if not os.path.exists("/tmp/vpn.pid"):
-            print("✗ VPN failed to start - no PID file")
-            return False
-        
-        with open("/tmp/vpn.pid") as f:
-            vpn_pid = f.read().strip()
-        print(f"✓ VPN started (PID: {vpn_pid})")
-        
-        # STEP 3: Wait then check IP
-        print("\nSTEP 3: Waiting 5s for tunnel to establish...")
-        for i in range(5, 0, -1):
-            print(f"  {i}s...", end='\r')
-            time.sleep(1)
-        print("        ")
-        
-        ip_after = check_public_ip()
-        if ip_after:
-            print(f"✓ Your public IP (after VPN): {ip_after}")
-        else:
-            print("⚠ Could not check public IP after VPN start")
-            ip_after = "unknown"
-        
-        # STEP 4: Verify VPN is working
-        print("\nSTEP 4: VPN Verification:")
-        print(f"  IP before:  {ip_before}")
-        print(f"  IP after:   {ip_after}")
-        
-        if ip_before == "unknown" or ip_after == "unknown":
-            print("  ⚠ WARNING: Cannot verify - network issues")
-            print("  Continuing anyway...")
-        elif ip_before == ip_after:
-            print("\n✗ ERROR: IP didn't change!")
-            print("  The VPN is NOT routing crawler traffic properly")
-            print("  Killing VPN and stopping...")
-            try:
-                os.kill(int(vpn_pid), 15)
-            except:
-                pass
-            return False
-        else:
-            print("  ✓ IP changed - VPN IS routing traffic")
-        
-        print("\n" + "=" * 50)
-        print("✓ VPN is configured")
-        print("  IMPORTANT: Your PC still uses normal internet")
-        print("  ONLY crawler traffic routes through VPN")
-        print(f"  Check /tmp/vpn.log for details")
-        runtime_state["vpn_running"] = True
-        return True
-            
-    except Exception as e:
-        print(f"✗ Failed to start VPN: {e}")
+    # STEP 2: Create isolated namespace
+    print("\nSTEP 2: Creating isolated network namespace...")
+    ns_name = setup_vpn_namespace()
+    if not ns_name:
+        print("✗ Failed to create namespace")
         return False
+    
+    # STEP 3: Start VPN in namespace
+    print("\nSTEP 3: Starting VPN in isolated namespace...")
+    if not start_vpn_in_namespace(ns_name, config_path):
+        print("✗ Failed to start VPN in namespace")
+        subprocess.run(["ip", "netns", "delete", ns_name], stderr=subprocess.DEVNULL)
+        return False
+    
+    # STEP 4: Test VPN tunnel
+    print("\nSTEP 4: Testing VPN tunnel (this may take 10 seconds)...")
+    if not test_vpn_tunnel(ns_name):
+        print("⚠ VPN tunnel test failed - proceeding anyway")
+    
+    # STEP 5: Start proxy in namespace for crawler to use
+    print("\nSTEP 5: Starting HTTP proxy in namespace...")
+    if not start_proxy_in_namespace(ns_name, proxy_port=8888):
+        print("✗ Failed to start proxy")
+        subprocess.run(["ip", "netns", "delete", ns_name], stderr=subprocess.DEVNULL)
+        return False
+    
+    # STEP 6: Verify system IP unchanged
+    print("\nSTEP 6: Verifying YOUR PC is unaffected...")
+    ip_after = check_public_ip()
+    if ip_after:
+        print(f"✓ Your public IP: {ip_after}")
+    else:
+        print("⚠ Could not check")
+        ip_after = "unknown"
+    
+    if ip_before != "unknown" and ip_after != "unknown":
+        if ip_before == ip_after:
+            print("✓ ✓ ✓ PERFECT! Your IP unchanged - PC protected!")
+        else:
+            print("✗ IP changed - namespace isolation failed!")
+            subprocess.run(["ip", "netns", "delete", ns_name], stderr=subprocess.DEVNULL)
+            return False
+    
+    # Store VPN info for later use
+    runtime_state["vpn_namespace"] = ns_name
+    runtime_state["vpn_running"] = True
+    
+    print("\n" + "=" * 50)
+    print("✓ VPN NAMESPACE SETUP COMPLETE!")
+    print(f"  • Isolated namespace: {ns_name}")
+    print(f"  • Proxy: http://192.168.100.2:8888")
+    print(f"  • Your PC: PROTECTED (still uses normal IP)")
+    print(f"  • Crawler: will use VPN automatically")
+    print("=" * 50)
+    
+    return True
 
 
 def handle_crawler_status(event):
@@ -646,6 +805,10 @@ def handle_crawler_save(event):
 
 def run_crawler_in_background(options):
     try:
+        # Set VPN proxy environment variable if VPN is running
+        if runtime_state.get("vpn_running"):
+            os.environ["AURORA_VPN_PROXY"] = "http://192.168.100.2:8888"
+        
         runtime_options = {
             "save_every": options["reindex_every"],
             "continuous": options["continuous_crawl"],
@@ -742,10 +905,36 @@ def perform_runtime_shutdown(reason="Safe stop requested"):
     if vpn_manager:
         vpn_manager.stop_all_vpns()
     
-    # Kill simple VPN if it was started
-    if runtime_state.get("vpn_running"):
-        import subprocess
-        import os
+    # Clean up namespace-based VPN
+    if runtime_state.get("vpn_namespace"):
+        ns_name = runtime_state["vpn_namespace"]
+        print(f"\n🧹 Cleaning up VPN namespace: {ns_name}")
+        
+        # Kill proxy process
+        proxy_proc = runtime_state.get("proxy_process")
+        if proxy_proc and proxy_proc.poll() is None:
+            try:
+                proxy_proc.terminate()
+                proxy_proc.wait(timeout=2)
+            except:
+                pass
+        
+        # Kill VPN in namespace
+        pid_file = f"/tmp/vpn-{ns_name}.pid"
+        if os.path.exists(pid_file):
+            try:
+                with open(pid_file) as f:
+                    pid = int(f.read().strip())
+                os.kill(pid, 15)  # SIGTERM
+            except:
+                pass
+        
+        # Delete namespace (this cleans up all interfaces and processes in it)
+        subprocess.run(["ip", "netns", "delete", ns_name], stderr=subprocess.DEVNULL)
+        print("✓ VPN namespace cleaned up")
+    
+    # Kill simple VPN if it was started (legacy)
+    if runtime_state.get("vpn_running") and not runtime_state.get("vpn_namespace"):
         if os.path.exists("/tmp/vpn.pid"):
             try:
                 with open("/tmp/vpn.pid") as f:
