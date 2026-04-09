@@ -39,53 +39,6 @@ whitelisted_path_keywords =
 # Optional: blacklist specific patterns (comma-separated regex)
 blacklist_patterns = /admin,/backend,/api/internal
 # Updated to focus on content-rich pages, not just homepages
-seed_urls =
-    https://en.wikipedia.org/wiki/Main_Page
-    https://en.wikipedia.org/wiki/Special:Random
-    https://www.reddit.com/r/explainlikeimfive/
-    https://www.reddit.com/r/todayilearned/
-    https://www.reddit.com/r/AskReddit/
-    https://www.reddit.com/r/science/
-    https://www.reddit.com/r/technology/
-    https://www.reddit.com/r/news/
-    https://www.reddit.com/r/worldnews/
-    https://www.reddit.com/r/food/
-    https://www.reddit.com/r/recipes/
-    https://www.reddit.com/r/cooking/
-    https://www.bbc.com/news
-    https://www.bbc.com/news/world
-    https://www.cnn.com/world
-    https://www.nytimes.com/section/world
-    https://www.theguardian.com/world
-    https://stackoverflow.com/questions
-    https://dev.to/top/week
-    https://medium.com/tag/technology
-    https://github.com/trending
-    https://news.ycombinator.com/best
-    https://www.britannica.com/browse
-    https://www.khanacademy.org/
-    https://www.allrecipes.com/
-    https://www.foodnetwork.com/recipes
-    https://www.bonappetitmag.com/recipes
-    https://www.seriouseats.com/recipes
-    https://www.tripadvisor.com/Attractions
-    https://www.yelp.com/search?find_desc=restaurants
-    https://www.youtube.com/feed/trending
-    https://arxiv.org/list/cs/recent
-    https://apnews.com/hub/
-    https://www.reuters.com/world
-    https://www.aljazeera.com/news
-    https://www.npr.org/sections/news/
-    https://www.usa.gov
-    https://www.data.gov
-    https://www.nasa.gov
-    https://www.bbc.co.uk
-    https://www.lemonde.fr
-    https://www.spiegel.de
-    https://substack.com
-    https://en.wikipedia.org/wiki/Special:Random
-    https://www.reddit.com/r/all
-    https://news.ycombinator.com/newest
 # Query params to strip during URL normalization
 tracking_query_prefixes = utm_|mc_
 # Exact query params to strip during URL normalization

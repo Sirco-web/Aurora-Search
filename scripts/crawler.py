@@ -128,6 +128,291 @@ DEFAULT_STARTING_URLS = [
     
     # More Reddit for diverse topics
     "https://www.reddit.com/r/all",
+    "https://www.reddit.com/r/gaming/",
+    "https://www.reddit.com/r/videogames/",
+    "https://www.reddit.com/r/pcgaming/",
+    "https://www.reddit.com/r/games/",
+    
+    # Gaming & Entertainment (Expanded)
+    "https://www.polygon.com/",
+    "https://www.polygon.com/reviews",
+    "https://www.polygon.com/news",
+    "https://www.ign.com/",
+    "https://www.ign.com/reviews",
+    "https://www.ign.com/news",
+    "https://www.gamespot.com/",
+    "https://www.gamespot.com/reviews",
+    "https://www.metacritic.com/",
+    "https://www.rockpapershotgun.com/",
+    "https://www.thegamer.com/",
+    "https://www.imdb.com/",
+    "https://www.rottentomatoes.com/",
+    "https://www.pitchfork.com/",
+    "https://www.theonion.com/",
+    "https://www.vulture.com/",
+    
+    # Wikipedia - Expanded with many portals and categories
+    "https://en.wikipedia.org/wiki/Portal:Technology",
+    "https://en.wikipedia.org/wiki/Portal:Science",
+    "https://en.wikipedia.org/wiki/Portal:History",
+    "https://en.wikipedia.org/wiki/Portal:Society",
+    "https://en.wikipedia.org/wiki/Portal:Arts",
+    "https://en.wikipedia.org/wiki/Portal:Geography",
+    "https://en.wikipedia.org/wiki/Portal:Health",
+    "https://en.wikipedia.org/wiki/Portal:Sports",
+    "https://en.wikipedia.org/wiki/Portal:Mathematics",
+    "https://en.wikipedia.org/wiki/Portal:Physics",
+    "https://en.wikipedia.org/wiki/Portal:Chemistry",
+    "https://en.wikipedia.org/wiki/Portal:Biology",
+    "https://en.wikipedia.org/wiki/Category:Stub_articles",
+    "https://en.wikipedia.org/wiki/Wikipedia:Featured_articles",
+    "https://en.wikipedia.org/wiki/Wikipedia:Good_articles",
+    "https://en.wikipedia.org/wiki/Category:Computer_science",
+    "https://en.wikipedia.org/wiki/Category:Engineering",
+    "https://en.wikipedia.org/wiki/Category:Mathematics",
+    "https://en.wikipedia.org/wiki/Category:Medicine",
+    "https://en.wikipedia.org/wiki/Category:Business",
+    "https://en.wikipedia.org/wiki/Category:Economics",
+    "https://en.wikipedia.org/wiki/Category:Technology",
+    "https://en.wikipedia.org/wiki/Category:Internet",
+    "https://en.wikipedia.org/wiki/Category:Video_games",
+    "https://en.wikipedia.org/wiki/Category:Films",
+    "https://en.wikipedia.org/wiki/Category:Music",
+    "https://en.wikipedia.org/wiki/Category:Literature",
+    
+    # Additional Knowledge & Learning
+    "https://www.edx.org/",
+    "https://www.udemy.com/",
+    "https://www.linkedin.com/learning/",
+    "https://www.skillshare.com/",
+    
+    # Additional News & Current Events
+    "https://www.washingtonpost.com/",
+    "https://www.businessinsider.com/",
+    "https://www.forbes.com/",
+    "https://www.cnbc.com/",
+    "https://finance.yahoo.com/",
+    
+    # Science & Research (Expanded)
+    "https://www.pubmed.ncbi.nlm.nih.gov/",
+    "https://www.sciencedirect.com/",
+    "https://www.nature.com/",
+    "https://www.doi.org/",
+    "https://www.jstor.org/",
+    
+    # Sports & Recreation
+    "https://www.espn.com/",
+    "https://www.sports-reference.com/",
+    "https://www.bleacherreport.com/",
+    
+    # Travel & Local
+    "https://www.tripadvisor.com/",
+    "https://www.yelp.com/",
+    "https://www.booking.com/",
+    
+    # Shopping & Products
+    "https://www.amazon.com/",
+    "https://www.ebay.com/",
+    
+    # Entertainment & Streaming
+    "https://www.youtube.com/feed/trending",
+    "https://www.youtube.com/results?search_query=technology",
+    "https://www.twitch.tv/",
+    
+    # International & Language Diversity
+    "https://www.washingtonpost.com/",
+    "https://www.theguardian.com/",
+    
+    # More Technology & Open Source
+    "https://www.python.org/",
+    "https://www.rust-lang.org/",
+    "https://go.dev/",
+    "https://nodejs.org/",
+    "https://www.djangoproject.com/",
+    "https://flask.palletsprojects.com/",
+    "https://www.tensorflow.org/",
+    "https://pytorch.org/",
+    "https://keras.io/",
+    "https://scikit-learn.org/",
+    
+    # Data Science & ML
+    "https://www.kaggle.com/",
+    "https://colab.research.google.com/",
+    "https://jupyter.org/",
+    "https://www.dataquest.io/",
+    "https://www.datacamp.com/",
+    "https://towards-data-science.medium.com/",
+    
+    # Web Development
+    "https://www.w3schools.com/",
+    "https://developer.mozilla.org/",
+    "https://caniuse.com/",
+    "https://html.spec.whatwg.org/",
+    "https://www.ecma-international.org/",
+    "https://react.dev/",
+    "https://vuejs.org/",
+    "https://angular.io/",
+    "https://svelte.dev/",
+    
+    # Cloud & Infrastructure
+    "https://aws.amazon.com/",
+    "https://cloud.google.com/",
+    "https://azure.microsoft.com/",
+    "https://www.digitalocean.com/",
+    "https://www.heroku.com/",
+    "https://vercel.com/",
+    "https://www.docker.com/",
+    "https://kubernetes.io/",
+    
+    # Security & Privacy
+    "https://owasp.org/",
+    "https://www.eff.org/",
+    "https://cve.mitre.org/",
+    "https://www.cisa.gov/",
+    "https://www.apple.com/privacy/",
+    "https://www.mozilla.org/privacy/",
+    
+    # Design & UX
+    "https://www.figma.com/",
+    "https://dribbble.com/",
+    "https://www.behance.net/",
+    "https://www.designthinking.ideo.com/",
+    "https://www.awwwards.com/",
+    
+    # Product & Startup
+    "https://www.producthunt.com/",
+    "https://www.indiehackers.com/",
+    "https://www.ycombinator.com/",
+    "https://www.techcrunch.com/",
+    "https://venturebeat.com/",
+    "https://www.theinformation.com/",
+    
+    # AI & Machine Learning News
+    "https://www.openai.com/",
+    "https://deepmind.google/",
+    "https://research.meta.com/",
+    "https://www.anthropic.com/",
+    "https://www.mistral.ai/",
+    
+    # Cybersecurity
+    "https://www.darknet.live/",
+    "https://www.bleepingcomputer.com/",
+    "https://www.securityweek.com/",
+    "https://www.infosecurity-magazine.com/",
+    "https://www.tripwire.com/",
+    
+    # Physics & Science News
+    "https://arxiv.org/recent",
+    "https://phys.org/",
+    "https://www.sciencedaily.com/",
+    "https://www.scientificamerican.com/",
+    "https://www.newscientist.com/",
+    
+    # History & Culture
+    "https://www.history.com/",
+    "https://www.historytoday.com/",
+    "https://www.smithsonianmag.com/",
+    "https://www.theatlanticwire.com/",
+    "https://hyperallergic.com/",
+    
+    # Philosophy & Ideas
+    "https://www.philosophersnews.com/",
+    "https://plato.stanford.edu/entries/",
+    "https://iep.utm.edu/",
+    "https://www.dialectica.org/",
+    
+    # Mathematics
+    "https://www.mathworld.wolfram.com/",
+    "https://proofwiki.org/",
+    "https://www.artofproblemsolving.com/",
+    "https://math.stackexchange.com/",
+    "https://www.aops.com/",
+    
+    # Astronomy & Space
+    "https://www.nasa.gov/",
+    "https://www.nasa.gov/mission_pages/",
+    "https://www.esa.int/",
+    "https://www.spacex.com/",
+    "https://www.isro.gov.in/",
+    "https://www.astronomy.com/",
+    
+    # Biology & Medicine
+    "https://www.ncbi.nlm.nih.gov/",
+    "https://www.medline.nih.gov/",
+    "https://www.healthline.com/",
+    "https://www.webmd.com/",
+    "https://www.verywellhealth.com/",
+    
+    # Climate & Environment
+    "https://www.ipcc.ch/",
+    "https://climate.nasa.gov/",
+    "https://www.epa.gov/climate",
+    "https://www.greenpeace.org/",
+    "https://www.worldwildlife.org/",
+    
+    # Economics & Markets
+    "https://www.imf.org/",
+    "https://www.worldbank.org/",
+    "https://www.oecd.org/",
+    "https://markets.businessinsider.com/",
+    "https://www.investing.com/",
+    
+    # Programming Languages
+    "https://www.typescriptlang.org/",
+    "https://www.lua.org/",
+    "https://www.ruby-lang.org/",
+    "https://www.php.net/",
+    "https://www.swift.org/",
+    "https://kotlinlang.org/",
+    "https://www.scala-lang.org/",
+    "https://www.haskell.org/",
+    
+    # Mobile Development
+    "https://developer.android.com/",
+    "https://developer.apple.com/",
+    "https://flutter.dev/",
+    "https://reactnative.dev/",
+    "https://www.xamarin.com/",
+    
+    # Databases
+    "https://www.postgresql.org/",
+    "https://www.mysql.com/",
+    "https://www.mongodb.com/",
+    "https://redis.io/",
+    "https://www.elastic.co/",
+    "https://cassandra.apache.org/",
+    
+    # DevOps & Monitoring
+    "https://prometheus.io/",
+    "https://www.elastic.co/products/kibana",
+    "https://grafana.com/",
+    "https://www.splunk.com/",
+    "https://www.datadog.com/",
+    
+    # Version Control
+    "https://www.mercurial-scm.org/",
+    "https://www.perforce.com/",
+    "https://www.fossil-scm.org/",
+    
+    # Documentation & Writing
+    "https://www.sphinx-doc.org/",
+    "https://swagger.io/",
+    "https://www.gitbook.com/",
+    "https://www.mkdocs.org/",
+    
+    # Project Management
+    "https://www.atlassian.com/",
+    "https://www.trello.com/",
+    "https://www.asana.com/",
+    "https://www.monday.com/",
+    "https://www.notion.so/",
+    
+    # Community & Social
+    "https://www.slashdot.org/",
+    "https://www.digg.com/",
+    "https://www.boing boing.net/",
+    "https://www.metafilter.com/",
+    "https://www.vpnsecure.me/",
 ]
 
 DEFAULT_TRACKING_QUERY_PREFIXES = [
@@ -297,6 +582,7 @@ class CrawlerService:
         self.last_saved_at = None
         self.last_idle_refill = 0.0
         self.resumed_from_state = False
+        self.previous_seed_urls = set()  # Track seed URLs from last saved state
 
     def sleep_with_stop(self, duration, interval=0.2):
         deadline = time.time() + max(0, duration)
@@ -462,6 +748,9 @@ class CrawlerService:
             self.crawl_count = int(state.get("crawl_count", self.crawl_count))
             self.last_saved_count = int(state.get("last_saved_count", self.last_saved_count))
             self.last_saved_at = state.get("last_saved_at")
+            
+            # NEW: Load previous seed URLs to detect new ones
+            self.previous_seed_urls = set(state.get("seed_urls", []))
 
             for url in self.starting_urls:
                 normalized = self.normalize_url(url)
@@ -475,6 +764,34 @@ class CrawlerService:
 
         self.resumed_from_state = bool(queue_items or self.visited_urls or self.webpage_info)
         return self.resumed_from_state
+
+    def check_for_new_seeds(self):
+        """
+        Detect newly added seed URLs and enqueue them for crawling.
+        Called when resuming from a saved state.
+        """
+        current_seeds = set(self.starting_urls)
+        new_seeds = current_seeds - self.previous_seed_urls
+        removed_seeds = self.previous_seed_urls - current_seeds
+        
+        if new_seeds:
+            self.log("")
+            self.log(f"🔍 DETECTED {len(new_seeds)} NEW SEED URL(S):")
+            for url in sorted(new_seeds):
+                self.log(f"   ➕ {url}")
+            self.log(f"Enqueueing new seeds for crawling...")
+            
+            enqueued = 0
+            for url in new_seeds:
+                if self.enqueue_url(url):
+                    enqueued += 1
+            
+            self.log(f"✓ Enqueued {enqueued} new seed URLs to crawl")
+        
+        if removed_seeds:
+            self.log(f"📝 Note: {len(removed_seeds)} seed URL(s) were removed from config")
+            for url in sorted(removed_seeds):
+                self.log(f"   ➖ {url}")
 
     def save_state(self):
         with self.lock:
@@ -505,6 +822,8 @@ class CrawlerService:
                 "crawl_count": self.crawl_count,
                 "last_saved_count": self.last_saved_count,
                 "last_saved_at": self.last_saved_at,
+                # NEW: Store seed URLs to detect new ones later
+                "seed_urls": sorted(self.starting_urls),
             }
 
         with open(self.state_path, "w", encoding="utf-8") as handle:
@@ -1457,6 +1776,8 @@ class CrawlerService:
         if resumed:
             self.log("Resuming crawler from the last saved crawl state.")
             self.publish_status("indexing", "Resuming crawler from the last saved crawl state.")
+            # NEW: Check for newly added seed URLs
+            self.check_for_new_seeds()
         else:
             self.publish_status("indexing", "Crawler service is starting up.")
             self.seed_queue()

@@ -1722,6 +1722,9 @@ def status_api():
         return jsonify(dict(indexing_status))
 
 
+
+
+
 if __name__ == "__main__":
     signal.signal(signal.SIGINT, handle_interrupt)
     signal.signal(signal.SIGTERM, handle_interrupt)
