@@ -1975,8 +1975,6 @@ def advanced_search_api():
 
 
 if __name__ == "__main__":
-
-if __name__ == "__main__":
     signal.signal(signal.SIGINT, handle_interrupt)
     signal.signal(signal.SIGTERM, handle_interrupt)
 
