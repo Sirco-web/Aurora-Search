@@ -5,6 +5,166 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Aurora Search Results</title>
     <link rel="stylesheet" href="styles.css" />
+    <style>
+      .results-meta {
+        color: #a5afbf;
+        font-size: 14px;
+        margin: 20px 0 10px 0;
+        padding: 0 20px;
+      }
+
+      .search-alert {
+        margin: 20px;
+        padding: 15px;
+        border-radius: 6px;
+        background: linear-gradient(135deg, #1a2332 0%, #0f1621 100%);
+        border-left: 4px solid #8ab4f8;
+      }
+
+      .search-alert h3 {
+        margin: 0 0 8px 0;
+        color: #8ab4f8;
+        font-size: 14px;
+      }
+
+      .search-alert .suggestions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 10px;
+      }
+
+      .search-alert .suggestion-link {
+        padding: 6px 12px;
+        background: #262d38;
+        border: 1px solid #3a4251;
+        border-radius: 4px;
+        color: #8ab4f8;
+        text-decoration: none;
+        font-size: 13px;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+
+      .search-alert .suggestion-link:hover {
+        background: #8ab4f8;
+        color: #0b0e13;
+        border-color: #8ab4f8;
+      }
+
+      .result {
+        padding: 20px;
+        border-bottom: 1px solid #262d38;
+        transition: background 0.2s;
+      }
+
+      .result:hover {
+        background: rgba(20, 25, 35, 0.5);
+      }
+
+      .result-title {
+        font-size: 18px;
+        font-weight: 500;
+        color: #8ab4f8;
+        text-decoration: none;
+        display: block;
+        margin-bottom: 6px;
+        word-break: break-word;
+      }
+
+      .result-title:hover {
+        text-decoration: underline;
+      }
+
+      .result-url {
+        color: #00d084;
+        font-size: 13px;
+        margin: 6px 0;
+        word-break: break-all;
+      }
+
+      .result-description {
+        color: #c5cfd9;
+        font-size: 14px;
+        line-height: 1.5;
+        margin: 10px 0 8px 0;
+      }
+
+      .result-stats {
+        font-size: 12px;
+        color: #a5afbf;
+        display: flex;
+        gap: 12px;
+        margin-top: 8px;
+      }
+
+      .result-stat {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+
+      .pagination {
+        display: flex;
+        justify-content: center;
+        gap: 10px;
+        padding: 30px 20px;
+        flex-wrap: wrap;
+      }
+
+      .pagination a, .pagination span {
+        padding: 8px 12px;
+        border: 1px solid #262d38;
+        border-radius: 4px;
+        color: #8ab4f8;
+        text-decoration: none;
+        transition: all 0.2s;
+      }
+
+      .pagination a:hover {
+        background: #262d38;
+        border-color: #8ab4f8;
+      }
+
+      .pagination .current {
+        background: #8ab4f8;
+        color: #0b0e13;
+        border-color: #8ab4f8;
+      }
+
+      .empty-state {
+        padding: 60px 20px;
+        text-align: center;
+      }
+
+      .empty-state h2 {
+        color: #f3f6fb;
+        margin: 0 0 10px 0;
+      }
+
+      .empty-state p {
+        color: #a5afbf;
+        margin: 8px 0;
+      }
+
+      .loading {
+        text-align: center;
+        padding: 40px;
+        color: #a5afbf;
+      }
+
+      .loading::after {
+        content: '';
+        animation: dots 1.5s steps(4, end) infinite;
+      }
+
+      @keyframes dots {
+        0%, 20% { content: ''; }
+        40% { content: '.'; }
+        60% { content: '..'; }
+        80%, 100% { content: '...'; }
+      }
+    </style>
   </head>
   <body class="results-page">
     <header class="search-header">
@@ -23,8 +183,9 @@
 
     <main class="results-layout">
       <div id="results-meta" class="results-meta"></div>
+      <div id="alerts"></div>
       <div id="results"></div>
-      <div id="pagination"></div>
+      <div id="pagination" class="pagination"></div>
     </main>
 
     <script>
@@ -34,86 +195,192 @@
       let page = parseInt(urlParams.get('page'), 10) || 1;
       const numResults = 10;
 
-      function addPaginationControls(totalResults) {
+      function formatNumber(n) {
+        return n.toLocaleString();
+      }
+
+      function getRelevanceBar(score) {
+        const percentage = Math.min(100, Math.max(0, score * 100));
+        const color = percentage > 80 ? '#00ff88' : percentage > 50 ? '#8ab4f8' : '#ffaa00';
+        return `<div style="width: ${percentage}%; height: 2px; background: ${color}; border-radius: 1px;"></div>`;
+      }
+
+      function addPaginationControls(total, resultsCount) {
         const paginationDiv = document.getElementById('pagination');
         paginationDiv.innerHTML = '';
 
+        const totalPages = Math.ceil(total / numResults);
+        
+        if (totalPages <= 1) return;
+
+        // Previous button
         if (page > 1) {
           const prevLink = document.createElement('a');
           prevLink.href = `search.html?search=${encodeURIComponent(query)}&page=${page - 1}`;
-          prevLink.textContent = 'Previous';
+          prevLink.textContent = '← Previous';
           paginationDiv.appendChild(prevLink);
         }
 
-        if (totalResults === numResults) {
+        // Page numbers
+        for (let i = Math.max(1, page - 2); i <= Math.min(totalPages, page + 2); i++) {
+          if (i === page) {
+            const span = document.createElement('span');
+            span.classList.add('current');
+            span.textContent = i;
+            paginationDiv.appendChild(span);
+          } else {
+            const link = document.createElement('a');
+            link.href = `search.html?search=${encodeURIComponent(query)}&page=${i}`;
+            link.textContent = i;
+            paginationDiv.appendChild(link);
+          }
+        }
+
+        // Next button
+        if (page < totalPages) {
           const nextLink = document.createElement('a');
           nextLink.href = `search.html?search=${encodeURIComponent(query)}&page=${page + 1}`;
-          nextLink.textContent = 'Next';
+          nextLink.textContent = 'Next →';
           paginationDiv.appendChild(nextLink);
         }
+      }
+
+      function renderSuggestions(suggestions) {
+        const alertsDiv = document.getElementById('alerts');
+        alertsDiv.innerHTML = '';
+        
+        if (!suggestions || Object.keys(suggestions).length === 0) return;
+
+        const alert = document.createElement('div');
+        alert.classList.add('search-alert');
+        alert.innerHTML = '<h3>Did you mean:</h3>';
+        
+        const suggestionsDiv = document.createElement('div');
+        suggestionsDiv.classList.add('suggestions');
+        
+        let count = 0;
+        for (const [term, suggestions_list] of Object.entries(suggestions)) {
+          for (const suggestion of suggestions_list) {
+            if (count >= 5) break;
+            const link = document.createElement('a');
+            link.classList.add('suggestion-link');
+            link.href = `search.html?search=${encodeURIComponent(suggestion)}`;
+            link.textContent = suggestion;
+            suggestionsDiv.appendChild(link);
+            count++;
+          }
+        }
+        
+        alert.appendChild(suggestionsDiv);
+        alertsDiv.appendChild(alert);
       }
 
       async function fetchResults() {
         const resultsDiv = document.getElementById('results');
         const resultsMeta = document.getElementById('results-meta');
+        const alertsDiv = document.getElementById('alerts');
 
         if (!query) {
           resultsMeta.textContent = '';
           resultsDiv.innerHTML = '';
+          alertsDiv.innerHTML = '';
           return;
         }
+
+        resultsDiv.innerHTML = '<div class="loading">Loading results</div>';
+        resultsMeta.textContent = '';
 
         try {
           const response = await fetch(`/search?q=${encodeURIComponent(query)}&page=${page}&num_results=${numResults}`);
           const data = await response.json();
           resultsDiv.innerHTML = '';
-          resultsMeta.innerHTML = '';
 
           if (response.status === 202) {
-            resultsMeta.textContent = 'Index still warming up';
+            resultsMeta.textContent = 'Index warming up...';
             resultsDiv.innerHTML = `
-              <article class="empty-state">
+              <div class="empty-state">
                 <h2>Search index is still warming up</h2>
-                <p>${data.message || 'Aurora Search is still building the live index.'}</p>
-                <p><a href="status.html">Open the status page</a> to watch crawl progress.</p>
-              </article>
+                <p>${data.message || 'Aurora Search is building the live index.'}</p>
+                <p><a href="status.html">Watch crawl progress</a> or check back in a moment.</p>
+              </div>
             `;
             setTimeout(fetchResults, 2000);
             return;
           }
 
-          resultsMeta.textContent = `${data.results.length} results for "${query}"`;
+          const total = data.total || 0;
+          if (total > 0) {
+            resultsMeta.textContent = `${formatNumber(total)} results for "${query}"`;
+          }
 
+          // Show suggestions if no results
           if (!data.results || data.results.length === 0) {
-            resultsDiv.innerHTML = `
-              <article class="empty-state">
-                <h2>No results found</h2>
-                <p>Aurora Search did not find anything for <strong>${query}</strong>.</p>
-              </article>
-            `;
+            if (data.suggestions && Object.keys(data.suggestions).length > 0) {
+              renderSuggestions(data.suggestions);
+              resultsDiv.innerHTML = `
+                <div class="empty-state">
+                  <h2>No exact matches found</h2>
+                  <p>Try one of the suggestions above, or try a different query.</p>
+                </div>
+              `;
+            } else {
+              resultsDiv.innerHTML = `
+                <div class="empty-state">
+                  <h2>No results found</h2>
+                  <p>Aurora Search found no results for <strong>"${query}"</strong>.</p>
+                  <p>Try a simpler query or different keywords.</p>
+                </div>
+              `;
+            }
             return;
           }
 
+          // Render results
           data.results.forEach((result) => {
             const resultDiv = document.createElement('article');
             resultDiv.classList.add('result');
+            
+            const relevance = (result.relevance_score || 0).toFixed(2);
+            const pagerank = (result.pagerank || 0).toFixed(3);
+            const panda = (result.panda_score || 0).toFixed(2);
+            const penguin = (result.penguin_score || 0).toFixed(2);
+            
             resultDiv.innerHTML = `
               <a class="result-title" href="${result.url}" target="_blank" rel="noreferrer">${result.title || result.url}</a>
               <p class="result-url">${result.url}</p>
               <p class="result-description">${result.description || ''}</p>
+              <div class="result-stats">
+                <div class="result-stat" title="Query Match Quality">
+                  <span>📌</span>
+                  <span>Relevance: ${relevance}</span>
+                </div>
+                <div class="result-stat" title="Link Authority">
+                  <span>🔗</span>
+                  <span>PageRank: ${pagerank}</span>
+                </div>
+                <div class="result-stat" title="Content Quality">
+                  <span>📄</span>
+                  <span>Quality: ${panda}</span>
+                </div>
+                <div class="result-stat" title="Link Trust">
+                  <span>🛡️</span>
+                  <span>Trust: ${penguin}</span>
+                </div>
+              </div>
             `;
             resultsDiv.appendChild(resultDiv);
           });
 
-          addPaginationControls(data.results.length);
+          addPaginationControls(total, data.results.length);
         } catch (error) {
+          console.error('Search error:', error);
           resultsMeta.textContent = 'Search error';
           resultsDiv.innerHTML = `
-            <article class="empty-state">
+            <div class="empty-state">
               <h2>Search error</h2>
-              <p>Could not load results right now.</p>
-              <p><a href="status.html">Open the status page</a> if you want to check the crawler.</p>
-            </article>
+              <p>Could not load results right now. Please try again.</p>
+              <p><a href="status.html">Check crawler status</a></p>
+            </div>
           `;
         }
       }

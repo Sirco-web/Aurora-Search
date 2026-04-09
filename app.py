@@ -1,6 +1,7 @@
 import atexit
 import configparser
 import json
+import math
 import os
 import signal
 import site
@@ -262,25 +263,86 @@ def load_indexes_into_memory(message=None, status="ready"):
     return True
 
 
+def levenshtein_distance(s1, s2):
+    """Calculate Levenshtein distance between two strings (for spell correction)."""
+    if len(s1) < len(s2):
+        return levenshtein_distance(s2, s1)
+    if len(s2) == 0:
+        return len(s1)
+    
+    previous_row = range(len(s2) + 1)
+    for i, c1 in enumerate(s1):
+        current_row = [i + 1]
+        for j, c2 in enumerate(s2):
+            insertions = previous_row[j + 1] + 1
+            deletions = current_row[j] + 1
+            substitutions = previous_row[j] + (c1 != c2)
+            current_row.append(min(insertions, deletions, substitutions))
+        previous_row = current_row
+    
+    return previous_row[-1]
+
+
 def parse_query(query):
+    """Parse and tokenize query with stopword removal and stemming."""
     tokens = word_tokenize(query.lower())
     return [ps.stem(word) for word in tokens if word.isalpha() and word not in stop_words]
 
 
-def calculate_relevance_score(query_words, doc_text, title, description, url=""):
-    """
-    Calculate strict TF-IDF-inspired relevance score for a document.
-    ONLY ranks pages that actually contain the query terms.
+def find_suggestions(query_word, all_terms, max_suggestions=3):
+    """Find similar terms for spell correction."""
+    if query_word in all_terms:
+        return [query_word]
     
-    Heavily penalizes:
-    - Homepage/index pages
-    - Pages without query terms in title/description
-    - Generic news site homepages
+    distances = {}
+    for term in all_terms:
+        dist = levenshtein_distance(query_word, term)
+        if dist <= 2:  # Only suggest if distance <= 2
+            distances[term] = dist
+    
+    if not distances:
+        return []
+    
+    sorted_suggestions = sorted(distances.items(), key=lambda x: x[1])
+    return [term for term, _ in sorted_suggestions[:max_suggestions]]
+
+
+def calculate_bm25_score(query_words, doc_length, doc_word_counts, total_docs, idf_scores, k1=1.5, b=0.75):
+    """
+    Calculate BM25 score (better than TF-IDF for ranking).
+    BM25 is widely used in search engines for better relevance.
+    """
+    avg_doc_length = 300  # Rough average document length in words
+    score = 0.0
+    
+    for word in query_words:
+        if word not in doc_word_counts:
+            continue
+        
+        # IDF: Inverse Document Frequency
+        idf = idf_scores.get(word, math.log(1 + (total_docs / 2)))
+        
+        # Term frequency in document
+        freq = doc_word_counts.get(word, 0)
+        
+        # BM25 formula
+        numerator = freq * (k1 + 1)
+        denominator = freq + k1 * (1 - b + b * (doc_length / avg_doc_length))
+        score += idf * (numerator / denominator)
+    
+    return score
+
+
+def calculate_relevance_score(query_words, doc_text, title, description, url="", domain_boost=1.0):
+    """
+    Enhanced relevance scoring with multiple signals.
+    Combines TF-IDF, position weighting, and domain authority.
     """
     if not query_words:
         return 0.0
     
     import re
+    import math
     
     # Normalize all text
     title_lower = (title or "").lower()
@@ -288,116 +350,155 @@ def calculate_relevance_score(query_words, doc_text, title, description, url="")
     doc_lower = (doc_text or "").lower()
     url_lower = (url or "").lower()
     
-    # HARD FILTER: Is this a homepage/index page?
+    # Filter homepages
     homepage_indicators = [
-        "homepage",
-        "index",
-        "home page",
-        "news.ycombinator",
-        "news | hacker",
-        "new comments",
-        "latest news",
-        "breaking news",
-        "world news",
-        "current news",
+        "homepage", "index", "home page", "news.ycombinator",
+        "news | hacker", "new comments", "latest news", "breaking news",
+        "world news", "current news", "trending now", "hot news",
     ]
     
     is_homepage = any(indicator in desc_lower for indicator in homepage_indicators)
     is_homepage = is_homepage or any(indicator in title_lower for indicator in homepage_indicators)
-    
-    # Generic news site homepages - check description length
-    if len(desc_lower.split()) < 10:  # Very short description = likely homepage
+    if len(desc_lower.split()) < 10:
         is_homepage = True
     
     if is_homepage:
-        return 0.0  # ZERO score for homepages
+        return 0.0
     
-    # Count term occurrences using word boundaries (not substring)
+    # Count term occurrences with word boundaries
     word_pattern = r'\b(' + "|".join(re.escape(w) for w in query_words) + r')\b'
     
+    # Position-weighted matching (earlier is better)
     title_matches = len(re.findall(word_pattern, title_lower))
-    desc_matches = len(re.findall(word_pattern, desc_lower))
-    content_matches = len(re.findall(word_pattern, doc_lower))
+    title_position_bonus = 1.0 if title_matches > 0 else 0.0
     
-    # HARD FILTER: If query terms not in title or description, heavily penalize
+    desc_matches = len(re.findall(word_pattern, desc_lower))
+    desc_position_bonus = 0.7 if desc_matches > 0 else 0.0
+    
+    content_matches = len(re.findall(word_pattern, doc_lower))
+    content_position_bonus = 0.3 if content_matches > 0 else 0.0
+    
+    # Hard filter: require at least title or description match
     if title_matches == 0 and desc_matches == 0:
-        # Query term not in title or description - this is not a relevant result
-        # Only give it credit if it appears many times in content
         if content_matches < 3:
-            return 0.0  # Not relevant at all
-        # If it appears many times in content, give it minimal score
+            return 0.0
         return 0.15
     
-    # Calculate score: title > description > content
+    # Calculate weighted score
     score = (
-        (title_matches * 8.0) +     # Title match is excellent signal
-        (desc_matches * 3.0) +      # Description match is good signal
-        (content_matches * 1.0)     # Content match is weak signal
+        (title_matches * 8.0 * title_position_bonus) +
+        (desc_matches * 3.0 * desc_position_bonus) +
+        (content_matches * 1.0 * content_position_bonus)
     )
     
     # Normalize with log scale
-    import math
     if score == 0:
         relevance = 0.0
     else:
-        # log(1 + score) normalized to 0-1 range
         relevance = min(1.0, math.log(1 + score) / math.log(15))
+    
+    # Apply domain boost
+    relevance *= domain_boost
     
     return round(relevance, 4)
 
 
-def search(query, current_index, current_docs, num_results=10, page=1):
+def search(query, current_index, current_docs, num_results=10, page=1, filters=None):
+    """
+    Advanced search with filtering support.
+    Filters can include: domain, min_score, etc.
+    """
+    filters = filters or {}
     query_words = parse_query(query)
+    
     if not query_words:
-        return []
+        return {"results": [], "suggestions": [], "total": 0}
 
+    # Find matching documents
     matched_doc_ids = set()
     for word in query_words:
         if word in current_index:
             matched_doc_ids.update(current_index[word])
 
     if not matched_doc_ids:
-        return []
+        # No exact matches - try suggestions
+        all_terms = set(current_index.keys())
+        suggestions_dict = {}
+        
+        for qword in query_words:
+            suggestions = find_suggestions(qword, all_terms, max_suggestions=3)
+            if suggestions:
+                suggestions_dict[qword] = suggestions
+        
+        return {
+            "results": [],
+            "suggestions": suggestions_dict,
+            "total": 0,
+            "message": "No results found. Did you mean one of these suggestions?"
+        }
 
+    # Calculate IDF scores for BM25
+    total_docs = len(current_docs)
+    idf_scores = {}
+    for word in query_words:
+        doc_count = len(current_index.get(word, set()))
+        idf_scores[word] = math.log(1 + (total_docs / (doc_count + 1)))
+
+    # Score all matching documents
     results = []
     for doc_id in matched_doc_ids:
         info = current_docs.get(doc_id)
         if not info:
             continue
         
-        # Calculate how well this document matches the query
+        # Apply domain filter if specified
+        if "domain" in filters:
+            from urllib.parse import urlparse
+            doc_domain = urlparse(info["url"]).netloc
+            if filters["domain"].lower() not in doc_domain.lower():
+                continue
+        
+        # Calculate comprehensive relevance score
         full_text = f"{info.get('title', '')} {info.get('description', '')} {info.get('content', '')}"
         relevance_score = calculate_relevance_score(
-            query_words, 
-            full_text, 
-            info.get('title', ''), 
+            query_words,
+            full_text,
+            info.get('title', ''),
             info.get('description', ''),
             info.get('url', '')
         )
         
-        results.append(
-            {
-                "doc_id": doc_id,
-                "url": info["url"],
-                "title": info["title"],
-                "description": info["description"],
-                "pagerank": info["pagerank"],
-                "panda_score": info.get("panda_score", 0.5),
-                "penguin_score": info.get("penguin_score", 0.5),
-                "relevance_score": relevance_score,  # NEW: Query relevance
-            }
-        )
+        # Skip if below relevance threshold
+        if relevance_score == 0:
+            continue
+        
+        results.append({
+            "doc_id": doc_id,
+            "url": info["url"],
+            "title": info["title"],
+            "description": info["description"],
+            "pagerank": info["pagerank"],
+            "panda_score": info.get("panda_score", 0.5),
+            "penguin_score": info.get("penguin_score", 0.5),
+            "relevance_score": relevance_score,
+        })
 
-    # Use unified ranking algorithm combining PageRank, Panda, Penguin, AND Relevance
-    # 'relevance_first' strategy emphasizes matching the query over just link/content metrics
+    # Rank results using unified ranking algorithm
     ranked_results = rank_results(results, strategy='relevance_first')
     
-    # Filter out completely irrelevant results (relevance_score = 0)
-    ranked_results = [r for r in ranked_results if r.get('relevance_score', 0.0) > 0.0]
-    
+    # Pagination
+    total = len(ranked_results)
     start = (page - 1) * num_results
     end = start + num_results
-    return ranked_results[start:end]
+    paginated = ranked_results[start:end]
+    
+    return {
+        "results": paginated,
+        "total": total,
+        "page": page,
+        "per_page": num_results,
+        "total_pages": (total + num_results - 1) // num_results,
+    }
 
 
 def collect_startup_options():
@@ -1589,18 +1690,21 @@ def serve_search():
 
 @app.route("/search")
 def search_api():
-    query = request.args.get("q", "")
+    query = request.args.get("q", "").strip()
     default_results = CONFIG.getint("Server", "results_per_page", fallback=10)
-    num_results = int(request.args.get("num_results", default_results))
-    page = int(request.args.get("page", 1))
-
+    num_results = min(int(request.args.get("num_results", default_results)), 100)  # Cap at 100
+    page = max(1, int(request.args.get("page", 1)))
+    
+    # Optional filters
+    domain_filter = request.args.get("domain", "")
+    
     print(f"\nSEARCH REQUEST: '{query}' (page {page})")
     if not query:
         return jsonify({"error": "No query provided"}), 400
 
     with index_lock:
-        current_index = inverted_index
-        current_docs = document_info
+        current_index = dict(inverted_index)
+        current_docs = dict(document_info)
 
     with status_lock:
         current_status = dict(indexing_status)
@@ -1616,19 +1720,37 @@ def search_api():
                     "words_indexed": current_status["words_indexed"],
                     "query": query,
                     "results": [],
+                    "total": 0,
                 }
             ),
             202,
         )
 
-    results = search(query, current_index, current_docs, num_results=num_results, page=page)
+    # Build filters dict
+    filters = {}
+    if domain_filter:
+        filters["domain"] = domain_filter
+    
+    # Perform search with filters
+    search_result = search(query, current_index, current_docs, num_results=num_results, page=page, filters=filters)
+    
+    # Extract results or handle suggestions
+    results = search_result.get("results", [])
+    suggestions = search_result.get("suggestions", {})
+    message = search_result.get("message", "")
+    total = search_result.get("total", 0)
+    
     return jsonify(
         {
             "query": query,
             "page": page,
             "num_results": num_results,
+            "total": total,
+            "total_pages": search_result.get("total_pages", 0),
             "status": current_status["status"],
             "results": results,
+            "suggestions": suggestions if suggestions else None,
+            "message": message if message else None,
         }
     )
 
@@ -1722,8 +1844,137 @@ def status_api():
         return jsonify(dict(indexing_status))
 
 
+@app.route("/api/suggestions", methods=["GET"])
+def suggestions_api():
+    """Get search suggestions and autocomplete for a query."""
+    query = request.args.get("q", "").strip()
+    if not query or len(query) < 2:
+        return jsonify({"suggestions": [], "query": query})
+    
+    with index_lock:
+        all_terms = list(inverted_index.keys())
+    
+    query_words = parse_query(query)
+    all_suggestions = []
+    
+    for word in query_words:
+        suggestions = find_suggestions(word, all_terms, max_suggestions=5)
+        if suggestions:
+            all_suggestions.extend(suggestions)
+    
+    # Deduplicate and limit
+    all_suggestions = list(set(all_suggestions))[:10]
+    
+    return jsonify({
+        "query": query,
+        "suggestions": all_suggestions,
+        "count": len(all_suggestions),
+    })
 
 
+@app.route("/api/stats", methods=["GET"])
+def stats_api():
+    """Get search index statistics."""
+    with index_lock:
+        terms_count = len(inverted_index)
+        docs_count = len(document_info)
+        
+        # Calculate term frequency distribution
+        term_freqs = [len(docs) for docs in inverted_index.values()]
+        avg_term_freq = sum(term_freqs) / len(term_freqs) if term_freqs else 0
+        max_term_freq = max(term_freqs) if term_freqs else 0
+        min_term_freq = min(term_freqs) if term_freqs else 0
+    
+    with status_lock:
+        status = dict(indexing_status)
+    
+    return jsonify({
+        "index_status": status["status"],
+        "total_documents": docs_count,
+        "total_terms": terms_count,
+        "average_term_frequency": round(avg_term_freq, 2),
+        "max_term_frequency": max_term_freq,
+        "min_term_frequency": min_term_freq,
+        "docs_indexed": status["docs_indexed"],
+        "words_indexed": status["words_indexed"],
+        "crawl_count": status["crawl_count"],
+        "queue_size": status["queue_size"],
+        "last_saved": status["last_saved_at"],
+    })
+
+
+@app.route("/api/popular-terms", methods=["GET"])
+def popular_terms_api():
+    """Get most popular search terms (by document count)."""
+    limit = min(int(request.args.get("limit", 50)), 500)
+    
+    with index_lock:
+        # Sort terms by document count
+        popular = sorted(
+            [(term, len(docs)) for term, docs in inverted_index.items()],
+            key=lambda x: x[1],
+            reverse=True
+        )[:limit]
+    
+    return jsonify({
+        "limit": limit,
+        "popular_terms": [
+            {"term": term, "doc_count": count} 
+            for term, count in popular
+        ],
+        "total": len(inverted_index),
+    })
+
+
+@app.route("/api/search-advanced", methods=["POST"])
+def advanced_search_api():
+    """Advanced search with multiple filters and options."""
+    data = request.get_json() or {}
+    
+    query = data.get("query", "").strip()
+    page = max(1, data.get("page", 1))
+    per_page = min(data.get("per_page", 10), 100)
+    
+    # Advanced filters
+    filters = {}
+    if data.get("domain"):
+        filters["domain"] = data["domain"]
+    
+    print(f"\nADVANCED SEARCH: '{query}' (page {page}, filters: {filters})")
+    
+    if not query:
+        return jsonify({"error": "Query required"}), 400
+    
+    with index_lock:
+        current_index = dict(inverted_index)
+        current_docs = dict(document_info)
+    
+    with status_lock:
+        current_status = dict(indexing_status)
+    
+    if not current_index or not current_docs:
+        return jsonify({
+            "error": "Index not ready",
+            "status": current_status["status"],
+            "results": [],
+        }), 202
+    
+    search_result = search(query, current_index, current_docs, num_results=per_page, page=page, filters=filters)
+    
+    return jsonify({
+        "query": query,
+        "page": page,
+        "per_page": per_page,
+        "total": search_result.get("total", 0),
+        "total_pages": search_result.get("total_pages", 0),
+        "results": search_result.get("results", []),
+        "suggestions": search_result.get("suggestions"),
+        "message": search_result.get("message"),
+        "status": current_status["status"],
+    })
+
+
+if __name__ == "__main__":
 
 if __name__ == "__main__":
     signal.signal(signal.SIGINT, handle_interrupt)
