@@ -10,7 +10,7 @@ import re
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from queue import Empty, Queue
+from queue import Empty, PriorityQueue
 from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
 from urllib.robotparser import RobotFileParser
 import xml.etree.ElementTree as ET
@@ -410,9 +410,464 @@ DEFAULT_STARTING_URLS = [
     # Community & Social
     "https://www.slashdot.org/",
     "https://www.digg.com/",
-    "https://www.boing boing.net/",
+    "https://www.boingboing.net/",
     "https://www.metafilter.com/",
     "https://www.vpnsecure.me/",
+    
+    # TECH COMPANIES - Direct Wikipedia Articles
+    "https://en.wikipedia.org/wiki/Google",
+    "https://en.wikipedia.org/wiki/Apple_Inc.",
+    "https://en.wikipedia.org/wiki/Microsoft",
+    "https://en.wikipedia.org/wiki/Amazon_(company)",
+    "https://en.wikipedia.org/wiki/Meta_Platforms",
+    "https://en.wikipedia.org/wiki/Tesla_Inc.",
+    "https://en.wikipedia.org/wiki/Twitter",
+    "https://en.wikipedia.org/wiki/Netflix",
+    "https://en.wikipedia.org/wiki/Nvidia",
+    "https://en.wikipedia.org/wiki/Intel",
+    "https://en.wikipedia.org/wiki/Oracle_Corporation",
+    "https://en.wikipedia.org/wiki/IBM",
+    "https://en.wikipedia.org/wiki/Cisco_Systems",
+    "https://en.wikipedia.org/wiki/Salesforce",
+    "https://en.wikipedia.org/wiki/Zoom_Video_Communications",
+    "https://en.wikipedia.org/wiki/ByteDance",
+    "https://en.wikipedia.org/wiki/Alibaba_Group",
+    "https://en.wikipedia.org/wiki/Tencent",
+    "https://en.wikipedia.org/wiki/Uber",
+    "https://en.wikipedia.org/wiki/Airbnb",
+    
+    # IMPORTANT CONCEPTS & ENTITIES
+    "https://en.wikipedia.org/wiki/Internet",
+    "https://en.wikipedia.org/wiki/World_Wide_Web",
+    "https://en.wikipedia.org/wiki/Computer",
+    "https://en.wikipedia.org/wiki/Artificial_intelligence",
+    "https://en.wikipedia.org/wiki/Machine_learning",
+    "https://en.wikipedia.org/wiki/Blockchain",
+    "https://en.wikipedia.org/wiki/Cryptocurrency",
+    "https://en.wikipedia.org/wiki/Bitcoin",
+    "https://en.wikipedia.org/wiki/Quantum_computing",
+    "https://en.wikipedia.org/wiki/Electric_vehicle",
+    "https://en.wikipedia.org/wiki/Renewable_energy",
+    "https://en.wikipedia.org/wiki/Climate_change",
+    "https://en.wikipedia.org/wiki/Pandemic",
+    "https://en.wikipedia.org/wiki/Vaccine",
+    "https://en.wikipedia.org/wiki/DNA",
+    "https://en.wikipedia.org/wiki/Gene_therapy",
+    "https://en.wikipedia.org/wiki/Nanotechnology",
+    "https://en.wikipedia.org/wiki/Space_exploration",
+    "https://en.wikipedia.org/wiki/Black_hole",
+    "https://en.wikipedia.org/wiki/Gravitational_wave",
+    
+    # LISTS & CATEGORIES FOR DIVERSE CONTENT
+    "https://en.wikipedia.org/wiki/Lists_of_countries_and_territories",
+    "https://en.wikipedia.org/wiki/List_of_countries_by_population",
+    "https://en.wikipedia.org/wiki/List_of_countries_by_area",
+    "https://en.wikipedia.org/wiki/List_of_U.S._states_by_population",
+    "https://en.wikipedia.org/wiki/List_of_cities_in_the_United_States",
+    "https://en.wikipedia.org/wiki/List_of_languages_by_number_of_native_speakers",
+    "https://en.wikipedia.org/wiki/List_of_countries_by_GDP",
+    "https://en.wikipedia.org/wiki/List_of_countries_by_life_expectancy",
+    "https://en.wikipedia.org/wiki/List_of_Nobel_laureates",
+    "https://en.wikipedia.org/wiki/List_of_Marvel_Cinematic_Universe_films",
+    "https://en.wikipedia.org/wiki/List_of_highest-grossing_films",
+    "https://en.wikipedia.org/wiki/List_of_plays_by_Shakespeare",
+    "https://en.wikipedia.org/wiki/List_of_Harry_Potter_characters",
+    "https://en.wikipedia.org/wiki/List_of_countries_and_dependencies_by_area",
+    
+    # GENERAL KNOWLEDGE HUBS
+    "https://en.wikipedia.org/wiki/Outline_of_the_United_States",
+    "https://en.wikipedia.org/wiki/Outline_of_science",
+    "https://en.wikipedia.org/wiki/Outline_of_technology",
+    "https://en.wikipedia.org/wiki/Outline_of_history",
+    "https://en.wikipedia.org/wiki/Outline_of_geography",
+    "https://en.wikipedia.org/wiki/Outline_of_health_sciences",
+    "https://en.wikipedia.org/wiki/Outline_of_mathematics",
+    "https://en.wikipedia.org/wiki/Outline_of_philosophy",
+    "https://en.wikipedia.org/wiki/Outline_of_culture",
+    "https://en.wikipedia.org/wiki/Outline_of_sports",
+    "https://en.wikipedia.org/wiki/Outline_of_music",
+    
+    # NUMBERS/REFERENCE
+    "https://en.wikipedia.org/wiki/Numbers",
+    "https://en.wikipedia.org/wiki/Integer",
+    "https://en.wikipedia.org/wiki/Prime_number",
+    "https://en.wikipedia.org/wiki/Decimal",
+    "https://en.wikipedia.org/wiki/Hexadecimal",
+    "https://en.wikipedia.org/wiki/Binary_number",
+    "https://en.wikipedia.org/wiki/Number_theory",
+    "https://en.wikipedia.org/wiki/Numerology",
+    "https://en.wikipedia.org/wiki/Mathematical_constant",
+    "https://en.wikipedia.org/wiki/List_of_mathematical_symbols",
+    
+    # HISTORY EVENTS & PEOPLE
+    "https://en.wikipedia.org/wiki/World_War_II",
+    "https://en.wikipedia.org/wiki/World_War_I",
+    "https://en.wikipedia.org/wiki/Industrial_Revolution",
+    "https://en.wikipedia.org/wiki/Ancient_Egypt",
+    "https://en.wikipedia.org/wiki/Roman_Empire",
+    "https://en.wikipedia.org/wiki/Medieval_period",
+    "https://en.wikipedia.org/wiki/Renaissance",
+    "https://en.wikipedia.org/wiki/Enlightenment",
+    "https://en.wikipedia.org/wiki/American_Civil_War",
+    "https://en.wikipedia.org/wiki/French_Revolution",
+    "https://en.wikipedia.org/wiki/Albert_Einstein",
+    "https://en.wikipedia.org/wiki/Stephen_Hawking",
+    "https://en.wikipedia.org/wiki/Marie_Curie",
+    "https://en.wikipedia.org/wiki/Nikola_Tesla",
+    "https://en.wikipedia.org/wiki/Steve_Jobs",
+    "https://en.wikipedia.org/wiki/Bill_Gates",
+    "https://en.wikipedia.org/wiki/Mark_Zuckerberg",
+    "https://en.wikipedia.org/wiki/Elon_Musk",
+    "https://en.wikipedia.org/wiki/Abraham_Lincoln",
+    "https://en.wikipedia.org/wiki/George_Washington",
+    
+    # ENTERTAINMENT & CULTURE
+    "https://en.wikipedia.org/wiki/List_of_Batman_films",
+    "https://en.wikipedia.org/wiki/List_of_Superman_films",
+    "https://en.wikipedia.org/wiki/Star_Wars",
+    "https://en.wikipedia.org/wiki/Marvel_Cinematic_Universe",
+    "https://en.wikipedia.org/wiki/Breaking_Bad",
+    "https://en.wikipedia.org/wiki/Game_of_Thrones",
+    "https://en.wikipedia.org/wiki/The_Office_(American_TV_series)",
+    "https://en.wikipedia.org/wiki/Friends_(TV_series)",
+    "https://en.wikipedia.org/wiki/The_Beatles",
+    "https://en.wikipedia.org/wiki/Pink_Floyd",
+    "https://en.wikipedia.org/wiki/The_Rolling_Stones",
+    
+    # SPORTS & GAMES
+    "https://en.wikipedia.org/wiki/FIFA_World_Cup",
+    "https://en.wikipedia.org/wiki/Super_Bowl",
+    "https://en.wikipedia.org/wiki/Olympics",
+    "https://en.wikipedia.org/wiki/Chess",
+    "https://en.wikipedia.org/wiki/League_of_Legends",
+    "https://en.wikipedia.org/wiki/Fortnite",
+    "https://en.wikipedia.org/wiki/Minecraft",
+    "https://en.wikipedia.org/wiki/The_Legend_of_Zelda",
+    "https://en.wikipedia.org/wiki/Super_Mario",
+    "https://en.wikipedia.org/wiki/Call_of_Duty",
+    
+    # COUNTRIES & GEOGRAPHY
+    "https://en.wikipedia.org/wiki/United_States",
+    "https://en.wikipedia.org/wiki/United_Kingdom",
+    "https://en.wikipedia.org/wiki/France",
+    "https://en.wikipedia.org/wiki/Germany",
+    "https://en.wikipedia.org/wiki/China",
+    "https://en.wikipedia.org/wiki/Japan",
+    "https://en.wikipedia.org/wiki/India",
+    "https://en.wikipedia.org/wiki/Brazil",
+    "https://en.wikipedia.org/wiki/Russia",
+    "https://en.wikipedia.org/wiki/Australia",
+    "https://en.wikipedia.org/wiki/Canada",
+    "https://en.wikipedia.org/wiki/Mexico",
+    "https://en.wikipedia.org/wiki/New_York_City",
+    "https://en.wikipedia.org/wiki/London",
+    "https://en.wikipedia.org/wiki/Paris",
+    "https://en.wikipedia.org/wiki/Tokyo",
+    "https://en.wikipedia.org/wiki/Dubai",
+    "https://en.wikipedia.org/wiki/Sydney",
+    
+    # DISEASES & MEDICINE
+    "https://en.wikipedia.org/wiki/COVID-19",
+    "https://en.wikipedia.org/wiki/Cancer",
+    "https://en.wikipedia.org/wiki/Heart_disease",
+    "https://en.wikipedia.org/wiki/Diabetes",
+    "https://en.wikipedia.org/wiki/Alzheimer%27s_disease",
+    "https://en.wikipedia.org/wiki/Autism",
+    "https://en.wikipedia.org/wiki/Depression_(mental_disorder)",
+    "https://en.wikipedia.org/wiki/Obesity",
+    "https://en.wikipedia.org/wiki/HIV/AIDS",
+    "https://en.wikipedia.org/wiki/Influenza",
+    
+    # ACADEMIC & RESEARCH
+    "https://www.journals.elsevier.com/",
+    "https://www.springer.com/",
+    "https://www.wiley.com/",
+    "https://www.taylorfrancis.com/",
+    "https://openreview.net/",
+    "https://www.semanticscholar.org/",
+    "https://www.researchgate.net/",
+    "https://www.academia.edu/",
+    "https://www.ncbi.nlm.nih.gov/pubmed/",
+    "https://www.tandfonline.com/",
+    
+    # MORE TECH COMPANIES
+    "https://en.wikipedia.org/wiki/Dell_Technologies",
+    "https://en.wikipedia.org/wiki/HP_Inc.",
+    "https://en.wikipedia.org/wiki/Lenovo",
+    "https://en.wikipedia.org/wiki/Samsung",
+    "https://en.wikipedia.org/wiki/LG_Electronics",
+    "https://en.wikipedia.org/wiki/Sony",
+    "https://en.wikipedia.org/wiki/Canon_Inc.",
+    "https://en.wikipedia.org/wiki/Nikon",
+    "https://en.wikipedia.org/wiki/Panasonic",
+    "https://en.wikipedia.org/wiki/Qualcomm",
+    "https://en.wikipedia.org/wiki/ARM_Holdings",
+    "https://en.wikipedia.org/wiki/AMD",
+    "https://en.wikipedia.org/wiki/Broadcom",
+    "https://en.wikipedia.org/wiki/Western_Digital",
+    "https://en.wikipedia.org/wiki/Seagate_Technology",
+    "https://en.wikipedia.org/wiki/Kingston_Technology",
+    "https://en.wikipedia.org/wiki/Corsair_Gaming",
+    "https://en.wikipedia.org/wiki/ASUS",
+    "https://en.wikipedia.org/wiki/Gigabyte_Technology",
+    "https://en.wikipedia.org/wiki/MSI_(company)",
+    
+    # SOCIAL MEDIA & PLATFORMS
+    "https://en.wikipedia.org/wiki/YouTube",
+    "https://en.wikipedia.org/wiki/Instagram",
+    "https://en.wikipedia.org/wiki/TikTok",
+    "https://en.wikipedia.org/wiki/Snapchat",
+    "https://en.wikipedia.org/wiki/Pinterest",
+    "https://en.wikipedia.org/wiki/Telegram_(software)",
+    "https://en.wikipedia.org/wiki/Discord_(software)",
+    "https://en.wikipedia.org/wiki/Twitch_(streaming_service)",
+    "https://en.wikipedia.org/wiki/LinkedIn",
+    "https://en.wikipedia.org/wiki/Nextdoor_(website)",
+    
+    # MORE SCIENCE & NATURE
+    "https://en.wikipedia.org/wiki/Physics",
+    "https://en.wikipedia.org/wiki/Chemistry",
+    "https://en.wikipedia.org/wiki/Biology",
+    "https://en.wikipedia.org/wiki/Geology",
+    "https://en.wikipedia.org/wiki/Astronomy",
+    "https://en.wikipedia.org/wiki/Ecology",
+    "https://en.wikipedia.org/wiki/Botany",
+    "https://en.wikipedia.org/wiki/Zoology",
+    "https://en.wikipedia.org/wiki/Microbiology",
+    "https://en.wikipedia.org/wiki/Neuroscience",
+    "https://en.wikipedia.org/wiki/Pathology",
+    "https://en.wikipedia.org/wiki/Pharmacology",
+    "https://en.wikipedia.org/wiki/Immunology",
+    "https://en.wikipedia.org/wiki/Genetics",
+    "https://en.wikipedia.org/wiki/Psychology",
+    
+    # MATHEMATICS & LOGIC
+    "https://en.wikipedia.org/wiki/Algebra",
+    "https://en.wikipedia.org/wiki/Geometry",
+    "https://en.wikipedia.org/wiki/Calculus",
+    "https://en.wikipedia.org/wiki/Statistics",
+    "https://en.wikipedia.org/wiki/Logic",
+    "https://en.wikipedia.org/wiki/Set_theory",
+    "https://en.wikipedia.org/wiki/Category_theory",
+    "https://en.wikipedia.org/wiki/Topology",
+    "https://en.wikipedia.org/wiki/Graph_theory",
+    "https://en.wikipedia.org/wiki/Discrete_mathematics",
+    
+    # ENGINEERING & ARCHITECTURE
+    "https://en.wikipedia.org/wiki/Software_engineering",
+    "https://en.wikipedia.org/wiki/Civil_engineering",
+    "https://en.wikipedia.org/wiki/Mechanical_engineering",
+    "https://en.wikipedia.org/wiki/Electrical_engineering",
+    "https://en.wikipedia.org/wiki/Chemical_engineering",
+    "https://en.wikipedia.org/wiki/Aerospace_engineering",
+    "https://en.wikipedia.org/wiki/Biomedical_engineering",
+    "https://en.wikipedia.org/wiki/Environmental_engineering",
+    "https://en.wikipedia.org/wiki/Materials_science",
+    "https://en.wikipedia.org/wiki/Nuclear_engineering",
+    
+    # ART & DESIGN
+    "https://en.wikipedia.org/wiki/Art",
+    "https://en.wikipedia.org/wiki/Painting",
+    "https://en.wikipedia.org/wiki/Sculpture",
+    "https://en.wikipedia.org/wiki/Photography",
+    "https://en.wikipedia.org/wiki/Graphic_design",
+    "https://en.wikipedia.org/wiki/Web_design",
+    "https://en.wikipedia.org/wiki/Interior_design",
+    "https://en.wikipedia.org/wiki/Fashion_design",
+    "https://en.wikipedia.org/wiki/Industrial_design",
+    "https://en.wikipedia.org/wiki/Architecture",
+    
+    # LITERATURE & WRITING
+    "https://en.wikipedia.org/wiki/Novel",
+    "https://en.wikipedia.org/wiki/Short_story",
+    "https://en.wikipedia.org/wiki/Poetry",
+    "https://en.wikipedia.org/wiki/Drama",
+    "https://en.wikipedia.org/wiki/Essay",
+    "https://en.wikipedia.org/wiki/Journalism",
+    "https://en.wikipedia.org/wiki/Science_fiction",
+    "https://en.wikipedia.org/wiki/Fantasy",
+    "https://en.wikipedia.org/wiki/Mystery_fiction",
+    "https://en.wikipedia.org/wiki/Romance_novel",
+    
+    # HISTORY PERIODS
+    "https://en.wikipedia.org/wiki/Ancient_history",
+    "https://en.wikipedia.org/wiki/Classical_antiquity",
+    "https://en.wikipedia.org/wiki/Byzantine_Empire",
+    "https://en.wikipedia.org/wiki/Islamic_Golden_Age",
+    "https://en.wikipedia.org/wiki/Viking_Age",
+    "https://en.wikipedia.org/wiki/Age_of_Exploration",
+    "https://en.wikipedia.org/wiki/Age_of_Enlightenment",
+    "https://en.wikipedia.org/wiki/Industrial_Age",
+    "https://en.wikipedia.org/wiki/Information_Age",
+    "https://en.wikipedia.org/wiki/Modern_era",
+    
+    # FAMOUS STRUCTURES & LANDMARKS
+    "https://en.wikipedia.org/wiki/Great_Wall_of_China",
+    "https://en.wikipedia.org/wiki/Colosseum",
+    "https://en.wikipedia.org/wiki/Statue_of_Liberty",
+    "https://en.wikipedia.org/wiki/Eiffel_Tower",
+    "https://en.wikipedia.org/wiki/Big_Ben",
+    "https://en.wikipedia.org/wiki/Taj_Mahal",
+    "https://en.wikipedia.org/wiki/Machu_Picchu",
+    "https://en.wikipedia.org/wiki/Christ_the_Redeemer",
+    "https://en.wikipedia.org/wiki/Pyramid_of_Giza",
+    "https://en.wikipedia.org/wiki/Stonehenge",
+    
+    # PHILOSOPHY & ETHICS
+    "https://en.wikipedia.org/wiki/Metaphysics",
+    "https://en.wikipedia.org/wiki/Epistemology",
+    "https://en.wikipedia.org/wiki/Ethics",
+    "https://en.wikipedia.org/wiki/Aesthetics",
+    "https://en.wikipedia.org/wiki/Political_philosophy",
+    "https://en.wikipedia.org/wiki/Existentialism",
+    "https://en.wikipedia.org/wiki/Stoicism",
+    "https://en.wikipedia.org/wiki/Pragmatism",
+    "https://en.wikipedia.org/wiki/Rationalism",
+    "https://en.wikipedia.org/wiki/Empiricism",
+    
+    # RELIGIONS & BELIEFS
+    "https://en.wikipedia.org/wiki/Christianity",
+    "https://en.wikipedia.org/wiki/Islam",
+    "https://en.wikipedia.org/wiki/Hinduism",
+    "https://en.wikipedia.org/wiki/Buddhism",
+    "https://en.wikipedia.org/wiki/Judaism",
+    "https://en.wikipedia.org/wiki/Sikhism",
+    "https://en.wikipedia.org/wiki/Jainism",
+    "https://en.wikipedia.org/wiki/Taoism",
+    "https://en.wikipedia.org/wiki/Confucianism",
+    "https://en.wikipedia.org/wiki/Atheism",
+    
+    # FOOD & NUTRITION
+    "https://en.wikipedia.org/wiki/Nutrition",
+    "https://en.wikipedia.org/wiki/Protein",
+    "https://en.wikipedia.org/wiki/Carbohydrate",
+    "https://en.wikipedia.org/wiki/Fat",
+    "https://en.wikipedia.org/wiki/Vitamin",
+    "https://en.wikipedia.org/wiki/Mineral_(nutrient)",
+    "https://en.wikipedia.org/wiki/Plant-based_diet",
+    "https://en.wikipedia.org/wiki/Vegetarianism",
+    "https://en.wikipedia.org/wiki/Veganism",
+    "https://en.wikipedia.org/wiki/Cuisine",
+    
+    # SPORTS & RECREATION
+    "https://en.wikipedia.org/wiki/Football",
+    "https://en.wikipedia.org/wiki/Basketball",
+    "https://en.wikipedia.org/wiki/Tennis",
+    "https://en.wikipedia.org/wiki/Golf",
+    "https://en.wikipedia.org/wiki/Swimming",
+    "https://en.wikipedia.org/wiki/Track_and_field",
+    "https://en.wikipedia.org/wiki/Gymnastics",
+    "https://en.wikipedia.org/wiki/Martial_arts",
+    "https://en.wikipedia.org/wiki/Boxing",
+    "https://en.wikipedia.org/wiki/Cycling",
+    
+    # MOVIES & CINEMA
+    "https://en.wikipedia.org/wiki/Film",
+    "https://en.wikipedia.org/wiki/Film_genre",
+    "https://en.wikipedia.org/wiki/Academy_Awards",
+    "https://en.wikipedia.org/wiki/Golden_Globe_Awards",
+    "https://en.wikipedia.org/wiki/BAFTA",
+    "https://en.wikipedia.org/wiki/Cannes_Film_Festival",
+    "https://en.wikipedia.org/wiki/Berlin_International_Film_Festival",
+    "https://en.wikipedia.org/wiki/Venice_Film_Festival",
+    "https://en.wikipedia.org/wiki/Animation",
+    "https://en.wikipedia.org/wiki/Documentary_film",
+    
+    # MUSIC & PERFORMING ARTS
+    "https://en.wikipedia.org/wiki/Music",
+    "https://en.wikipedia.org/wiki/Classical_music",
+    "https://en.wikipedia.org/wiki/Jazz",
+    "https://en.wikipedia.org/wiki/Rock_music",
+    "https://en.wikipedia.org/wiki/Pop_music",
+    "https://en.wikipedia.org/wiki/Hip_hop_music",
+    "https://en.wikipedia.org/wiki/Country_music",
+    "https://en.wikipedia.org/wiki/Electronic_music",
+    "https://en.wikipedia.org/wiki/Musical_instrument",
+    "https://en.wikipedia.org/wiki/Orchestra",
+    
+    # TELEVISION & STREAMING
+    "https://en.wikipedia.org/wiki/Television",
+    "https://en.wikipedia.org/wiki/Reality_television",
+    "https://en.wikipedia.org/wiki/Game_show",
+    "https://en.wikipedia.org/wiki/Sitcom",
+    "https://en.wikipedia.org/wiki/Drama_(film_and_television)",
+    "https://en.wikipedia.org/wiki/Documentary_television",
+    "https://en.wikipedia.org/wiki/Anime",
+    "https://en.wikipedia.org/wiki/Manga",
+    "https://en.wikipedia.org/wiki/Cartoon",
+    "https://en.wikipedia.org/wiki/Comic_book",
+    
+    # BUSINESS & ECONOMICS
+    "https://en.wikipedia.org/wiki/Business",
+    "https://en.wikipedia.org/wiki/Economics",
+    "https://en.wikipedia.org/wiki/Capitalism",
+    "https://en.wikipedia.org/wiki/Socialism",
+    "https://en.wikipedia.org/wiki/Communism",
+    "https://en.wikipedia.org/wiki/Trade",
+    "https://en.wikipedia.org/wiki/Supply_and_demand",
+    "https://en.wikipedia.org/wiki/Inflation",
+    "https://en.wikipedia.org/wiki/Recession",
+    "https://en.wikipedia.org/wiki/Stock_market",
+    
+    # PSYCHOLOGY & NEUROSCIENCE
+    "https://en.wikipedia.org/wiki/Cognitive_psychology",
+    "https://en.wikipedia.org/wiki/Social_psychology",
+    "https://en.wikipedia.org/wiki/Development_psychology",
+    "https://en.wikipedia.org/wiki/Abnormal_psychology",
+    "https://en.wikipedia.org/wiki/Personality_psychology",
+    "https://en.wikipedia.org/wiki/Memory",
+    "https://en.wikipedia.org/wiki/Attention",
+    "https://en.wikipedia.org/wiki/Learning",
+    "https://en.wikipedia.org/wiki/Emotion",
+    "https://en.wikipedia.org/wiki/Consciousness",
+    
+    # TECHNOLOGY PIONEERS & INNOVATIONS
+    "https://en.wikipedia.org/wiki/Alan_Turing",
+    "https://en.wikipedia.org/wiki/Grace_Hopper",
+    "https://en.wikipedia.org/wiki/Richard_Stallman",
+    "https://en.wikipedia.org/wiki/Linus_Torvalds",
+    "https://en.wikipedia.org/wiki/Guido_van_Rossum",
+    "https://en.wikipedia.org/wiki/Bjarne_Stroustrup",
+    "https://en.wikipedia.org/wiki/Dennis_Ritchie",
+    "https://en.wikipedia.org/wiki/Niklaus_Wirth",
+    "https://en.wikipedia.org/wiki/Donald_Knuth",
+    "https://en.wikipedia.org/wiki/Edsger_W._Dijkstra",
+    
+    # SCIENCE CONCEPTS
+    "https://en.wikipedia.org/wiki/Theory_of_relativity",
+    "https://en.wikipedia.org/wiki/Quantum_mechanics",
+    "https://en.wikipedia.org/wiki/Thermodynamics",
+    "https://en.wikipedia.org/wiki/Electromagnetism",
+    "https://en.wikipedia.org/wiki/Photon",
+    "https://en.wikipedia.org/wiki/Electron",
+    "https://en.wikipedia.org/wiki/Atom",
+    "https://en.wikipedia.org/wiki/Molecule",
+    "https://en.wikipedia.org/wiki/Cell_(biology)",
+    "https://en.wikipedia.org/wiki/Evolution",
+    
+    # MORE REFERENCE & LISTS
+    "https://en.wikipedia.org/wiki/List_of_countries_by_name",
+    "https://en.wikipedia.org/wiki/List_of_U.S._states",
+    "https://en.wikipedia.org/wiki/Periodic_table",
+    "https://en.wikipedia.org/wiki/List_of_elements",
+    "https://en.wikipedia.org/wiki/List_of_countries_by_HDI",
+    "https://en.wikipedia.org/wiki/List_of_natural_resources",
+    "https://en.wikipedia.org/wiki/List_of_islands_by_area",
+    "https://en.wikipedia.org/wiki/List_of_mountains",
+    "https://en.wikipedia.org/wiki/List_of_rivers",
+    "https://en.wikipedia.org/wiki/List_of_lakes",
+    
+    # BIOLOGY TOPICS
+    "https://en.wikipedia.org/wiki/Protein_folding",
+    "https://en.wikipedia.org/wiki/Photosynthesis",
+    "https://en.wikipedia.org/wiki/Metabolism",
+    "https://en.wikipedia.org/wiki/Cell_membrane",
+    "https://en.wikipedia.org/wiki/Mitochondrion",
+    "https://en.wikipedia.org/wiki/Nucleus_(cell)",
+    "https://en.wikipedia.org/wiki/Enzyme",
+    "https://en.wikipedia.org/wiki/Antibody",
+    "https://en.wikipedia.org/wiki/Hormone",
+    "https://en.wikipedia.org/wiki/Neuron",
 ]
 
 DEFAULT_TRACKING_QUERY_PREFIXES = [
@@ -554,13 +1009,17 @@ class CrawlerService:
             re.compile(pattern.strip()) for pattern in self._resolve_list("Crawler", "blacklist_patterns", []) if pattern.strip()
         ]
 
-        self.queue = Queue()
+        self.queue = PriorityQueue()
         self.lock = threading.Lock()
         self.save_lock = threading.Lock()
         self.visited_urls = set()
         self.known_urls = set()
         self.domain_page_count = {}  # Track pages per domain for diversity
         self.url_depth_map = {}  # Track depth of each URL
+        self.url_seed_map = {}  # Track which URLs are seeds (True/False)
+        self.seed_urls_crawled = 0  # Count seed URLs processed
+        self.seed_urls_remaining = 0  # Count seed URLs still in queue
+        self.discovery_phase_active = True  # Track crawl phase
         self.index = {}
         self.webpage_info = {}
         self.doc_words = {}
@@ -749,6 +1208,22 @@ class CrawlerService:
             self.last_saved_count = int(state.get("last_saved_count", self.last_saved_count))
             self.last_saved_at = state.get("last_saved_at")
             
+            # NEW: Load priority crawling metadata
+            saved_url_depth_map = state.get("url_depth_map", {})
+            saved_url_seed_map = state.get("url_seed_map", {})
+            self.seed_urls_crawled = int(state.get("seed_urls_crawled", 0))
+            
+            # Restore depth and seed mappings
+            for url, depth in saved_url_depth_map.items():
+                normalized = self.normalize_url(url)
+                if normalized:
+                    self.url_depth_map[normalized] = depth
+            
+            for url, is_seed in saved_url_seed_map.items():
+                normalized = self.normalize_url(url)
+                if normalized:
+                    self.url_seed_map[normalized] = is_seed
+            
             # NEW: Load previous seed URLs to detect new ones
             self.previous_seed_urls = set(state.get("seed_urls", []))
 
@@ -757,18 +1232,30 @@ class CrawlerService:
                 if normalized:
                     self.known_urls.add(normalized)
 
+            # Restore queue with priority information
             for url in queue_items:
                 normalized = self.normalize_url(url)
                 if normalized:
-                    self.queue.put(normalized)
+                    is_seed = self.url_seed_map.get(normalized, False)
+                    depth = self.url_depth_map.get(normalized, 0)
+                    # Re-enqueue with correct priority
+                    priority = (0 if is_seed else 1, depth, normalized)
+                    self.queue.put((priority, normalized))
+                    if is_seed:
+                        self.seed_urls_remaining += 1
 
         self.resumed_from_state = bool(queue_items or self.visited_urls or self.webpage_info)
         return self.resumed_from_state
 
     def check_for_new_seeds(self):
         """
-        Detect newly added seed URLs and enqueue them for crawling.
+        Detect newly added seed URLs and enqueue them with high priority.
         Called when resuming from a saved state.
+        
+        New seeds are queued with is_seed=True so they get:
+        - Priority 0 (highest)
+        - Depth limit of 20 (vs 3 for discovered URLs)
+        - Deep crawling to populate index with key topics
         """
         current_seeds = set(self.starting_urls)
         new_seeds = current_seeds - self.previous_seed_urls
@@ -779,14 +1266,16 @@ class CrawlerService:
             self.log(f"🔍 DETECTED {len(new_seeds)} NEW SEED URL(S):")
             for url in sorted(new_seeds):
                 self.log(f"   ➕ {url}")
-            self.log(f"Enqueueing new seeds for crawling...")
+            self.log(f"⏳ Enqueueing new seeds with HIGH PRIORITY (depth 0-20)...")
             
             enqueued = 0
-            for url in new_seeds:
-                if self.enqueue_url(url):
+            for url in sorted(new_seeds):  # Sort for determinism
+                if self.enqueue_url(url, is_seed=True, depth=0):
                     enqueued += 1
             
-            self.log(f"✓ Enqueued {enqueued} new seed URLs to crawl")
+            self.log(f"✓ Enqueued {enqueued}/{len(new_seeds)} new seed URLs for intelligent deep crawling")
+            if enqueued > 0:
+                self.log(f"   Seeds will be crawled deeply (20 levels) while maintaining resume capability")
         
         if removed_seeds:
             self.log(f"📝 Note: {len(removed_seeds)} seed URL(s) were removed from config")
@@ -796,7 +1285,9 @@ class CrawlerService:
     def save_state(self):
         with self.lock:
             with self.queue.mutex:
-                queue_snapshot = list(self.queue.queue)
+                # PriorityQueue stores tuples: (priority, url)
+                # Extract just the URLs for storage
+                queue_snapshot = [url for (priority, url) in self.queue.queue]
 
             state = {
                 "queue": queue_snapshot,
@@ -824,16 +1315,26 @@ class CrawlerService:
                 "last_saved_at": self.last_saved_at,
                 # NEW: Store seed URLs to detect new ones later
                 "seed_urls": sorted(self.starting_urls),
+                # NEW: Store depth and seed status for priority crawling
+                "url_depth_map": dict(self.url_depth_map),
+                "url_seed_map": dict(self.url_seed_map),
+                "seed_urls_crawled": self.seed_urls_crawled,
             }
 
         with open(self.state_path, "w", encoding="utf-8") as handle:
             json.dump(state, handle, indent=2)
 
     def seed_queue(self):
+        """
+        Initialize the crawler queue with starting seed URLs.
+        Seeds are enqueued with is_seed=True for priority handling.
+        """
         seeded = 0
         for url in self.starting_urls:
-            seeded += int(self.enqueue_url(url))
-        self.log(f"Seeded crawler queue with {seeded} starting URLs.")
+            if self.enqueue_url(url, is_seed=True, depth=0):
+                seeded += 1
+        self.log(f"✓ Seeded crawler queue with {seeded} starting URLs.")
+        self.log(f"   Seeds will crawl deeply (max depth 20) to build knowledge base")
 
     def normalize_url(self, url):
         parsed = urlparse(url)
@@ -876,7 +1377,12 @@ class CrawlerService:
             return None
         return f"{parsed.scheme}://{parsed.netloc}"
 
-    def enqueue_url(self, url):
+    def enqueue_url(self, url, is_seed=False, depth=None):
+        """
+        Enqueue URL with priority-based system.
+        Seeds get priority 0, discovered URLs get priority 1.
+        Depth defaults: seeds=20, discovered=3
+        """
         normalized = self.normalize_url(url)
         if not normalized:
             return False
@@ -885,16 +1391,36 @@ class CrawlerService:
         
         # Check domain page limits for URL diversity
         if not self.can_crawl_from_domain(normalized):
+            return False
+
+        # Determine depth limit based on seed status
+        if depth is None:
+            depth = 0
+        
+        max_allowed_depth = 20 if is_seed else self.max_crawl_depth
+        if depth > max_allowed_depth:
             return False
 
         with self.lock:
             if normalized in self.known_urls or normalized in self.visited_urls:
                 return False
+            
             self.known_urls.add(normalized)
-            self.queue.put(normalized)
+            self.url_depth_map[normalized] = depth
+            self.url_seed_map[normalized] = is_seed
+            
+            # Priority: seeds get 0 (highest), discovered get 1
+            # Within same priority, prefer shallower URLs
+            priority = (0 if is_seed else 1, depth, normalized)
+            self.queue.put((priority, normalized))
+            
+            if is_seed:
+                self.seed_urls_remaining += 1
+        
         return True
-
-    def requeue_url(self, url):
+    
+    def requeue_url(self, url, is_seed=False):
+        """Requeue a URL that failed (retry)."""
         normalized = self.normalize_url(url)
         if not normalized:
             return False
@@ -904,12 +1430,24 @@ class CrawlerService:
         # Check domain page limits for URL diversity
         if not self.can_crawl_from_domain(normalized):
             return False
+        
+        current_depth = self.url_depth_map.get(normalized, 0)
+        max_allowed_depth = 20 if is_seed else self.max_crawl_depth
+        
+        if current_depth > max_allowed_depth:
+            return False
 
         with self.lock:
+            # Only requeue if not already visited
             if normalized in self.visited_urls:
                 return False
+            
+            # Re-add to known URLs if it was cleared
             self.known_urls.add(normalized)
-            self.queue.put(normalized)
+            
+            priority = (0 if is_seed else 1, current_depth, normalized)
+            self.queue.put((priority, normalized))
+        
         return True
 
     def get_next_proxy(self):
@@ -1668,7 +2206,8 @@ class CrawlerService:
 
             try:
                 # FIXED: Shorter timeout so workers check stop_event more frequently
-                current_url = self.queue.get(timeout=0.5)
+                # PriorityQueue returns tuple: (priority, url)
+                priority_tuple, current_url = self.queue.get(timeout=0.5)
             except Empty:
                 if self.stop_event.is_set():
                     break
@@ -1688,8 +2227,17 @@ class CrawlerService:
                     if current_url in self.visited_urls:
                         continue
                     self.visited_urls.add(current_url)
+                    
+                    # Track seed status for logging and depth assignment
+                    is_seed = self.url_seed_map.get(current_url, False)
+                    current_depth = self.url_depth_map.get(current_url, 0)
+                
+                if is_seed:
+                    with self.lock:
+                        self.seed_urls_crawled += 1
+                        self.seed_urls_remaining = max(0, self.seed_urls_remaining - 1)
 
-                self.log(f"Crawling: {current_url}")
+                self.log(f"Crawling: {current_url}" + (" [SEED]" if is_seed else ""))
                 if not self.sleep_with_stop(random.uniform(self.min_delay, self.max_delay)):
                     break
 
@@ -1731,7 +2279,8 @@ class CrawlerService:
                         self.crawl_count += 1
                     self.record_domain_crawl(canonical_url)  # Track domain pages
                     for new_url in new_urls:
-                        self.enqueue_url(new_url)
+                        # Discovered URLs are not seeds, so is_seed=False
+                        self.enqueue_url(new_url, is_seed=False, depth=current_depth + 1)
                     continue
 
                 indexed_page = index_page(webpage, canonical_url)
@@ -1751,9 +2300,12 @@ class CrawlerService:
                 self.record_domain_crawl(canonical_url)  # Track domain pages
 
                 for new_url in new_urls:
-                    self.enqueue_url(new_url)
+                    # Discovered URLs inherit the depth+1 from parent (seeds or discovered)
+                    # but are marked as non-seeds (discovered=False)
+                    self.enqueue_url(new_url, is_seed=False, depth=current_depth + 1)
 
-                self.log(f"   Indexed doc #{doc_id} | total crawled: {crawl_count} | docs: {docs_indexed}")
+                log_suffix = f" | depth: {current_depth}" + (" [SEED]" if is_seed else "")
+                self.log(f"   Indexed doc #{doc_id} | total crawled: {crawl_count} | docs: {docs_indexed}{log_suffix}")
                 self.publish_status("indexing", f"Crawled {crawl_count} pages so far.")
                 self.maybe_save_snapshot(reason="periodic")
             except requests.RequestException as exc:
