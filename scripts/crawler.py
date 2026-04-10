@@ -1382,6 +1382,9 @@ class CrawlerService:
         Enqueue URL with priority-based system.
         Seeds get priority 0, discovered URLs get priority 1.
         Depth defaults: seeds=20, discovered=3
+        
+        IMPORTANT: Seeds at depth 0 bypass known_urls check to allow re-enqueueing
+        from state reload. This is intentional - seeds must always be crawlable.
         """
         normalized = self.normalize_url(url)
         if not normalized:
@@ -1389,10 +1392,6 @@ class CrawlerService:
         if self.should_skip_url(normalized):
             return False
         
-        # Check domain page limits for URL diversity
-        if not self.can_crawl_from_domain(normalized):
-            return False
-
         # Determine depth limit based on seed status
         if depth is None:
             depth = 0
@@ -1400,9 +1399,23 @@ class CrawlerService:
         max_allowed_depth = 20 if is_seed else self.max_crawl_depth
         if depth > max_allowed_depth:
             return False
+        
+        # Don't apply domain limits to seeds - they're important!
+        # Only check domain limits for discovered URLs
+        if not is_seed and not self.can_crawl_from_domain(normalized):
+            return False
 
         with self.lock:
-            if normalized in self.known_urls or normalized in self.visited_urls:
+            # FIXED: Allow seeds at depth 0 to bypass known_urls check
+            # This lets seeds be re-enqueued when resuming from saved state
+            # But prevent re-enqueueing the same discovered URL twice
+            if normalized in self.visited_urls:
+                # Already crawled - don't re-crawl
+                return False
+            
+            # For discovered URLs, prevent duplicate enqueueing to save queue space
+            # For seeds, allow re-enqueueing at depth 0 (fresh seed detection)
+            if normalized in self.known_urls and not (is_seed and depth == 0):
                 return False
             
             self.known_urls.add(normalized)

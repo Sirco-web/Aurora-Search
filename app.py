@@ -337,6 +337,7 @@ def calculate_relevance_score(query_words, doc_text, title, description, url="",
     """
     Enhanced relevance scoring with multiple signals.
     Combines TF-IDF, position weighting, and domain authority.
+    query_words: stemmed query words (from parse_query)
     """
     if not query_words:
         return 0.0
@@ -350,39 +351,51 @@ def calculate_relevance_score(query_words, doc_text, title, description, url="",
     doc_lower = (doc_text or "").lower()
     url_lower = (url or "").lower()
     
-    # Filter homepages
+    # Only filter obvious homepages (breaking news, latest news, etc)
     homepage_indicators = [
-        "homepage", "index", "home page", "news.ycombinator",
-        "news | hacker", "new comments", "latest news", "breaking news",
-        "world news", "current news", "trending now", "hot news",
+        "news.ycombinator",
+        "news | hacker",
+        "new comments",
+        "latest news",
+        "breaking news",
+        "trending now",
+        "hot news",
     ]
     
-    is_homepage = any(indicator in desc_lower for indicator in homepage_indicators)
-    is_homepage = is_homepage or any(indicator in title_lower for indicator in homepage_indicators)
-    if len(desc_lower.split()) < 10:
-        is_homepage = True
+    is_obvious_homepage = any(indicator in desc_lower for indicator in homepage_indicators)
+    is_obvious_homepage = is_obvious_homepage or any(indicator in title_lower for indicator in homepage_indicators)
     
-    if is_homepage:
+    if is_obvious_homepage:
         return 0.0
     
-    # Count term occurrences with word boundaries
-    word_pattern = r'\b(' + "|".join(re.escape(w) for w in query_words) + r')\b'
+    # FIXED: Create unstemmed pattern from stemmed words by removing stems
+    # For now, use simple heuristic: stemmed word usually matches if unstemmed word starts with it
+    # This is more forgiving than exact stemmed word matching
     
-    # Position-weighted matching (earlier is better)
-    title_matches = len(re.findall(word_pattern, title_lower))
+    # Count matches for title, description, and content
+    # For each stemmed word, look for words that start with the stem
+    title_matches = 0
+    desc_matches = 0
+    content_matches = 0
+    
+    for stemmed_word in query_words:
+        # Find words in text that start with this stem (more forgiving than exact match)
+        # Pattern: word boundary, stem, then anything that might complete it
+        pattern = r'\b' + re.escape(stemmed_word) + r'\w*\b'
+        
+        title_matches += len(re.findall(pattern, title_lower))
+        desc_matches += len(re.findall(pattern, desc_lower))
+        content_matches += len(re.findall(pattern, doc_lower))
+    
     title_position_bonus = 1.0 if title_matches > 0 else 0.0
-    
-    desc_matches = len(re.findall(word_pattern, desc_lower))
     desc_position_bonus = 0.7 if desc_matches > 0 else 0.0
-    
-    content_matches = len(re.findall(word_pattern, doc_lower))
     content_position_bonus = 0.3 if content_matches > 0 else 0.0
     
-    # Hard filter: require at least title or description match
+    # Hard filter: require at least title or some content match
     if title_matches == 0 and desc_matches == 0:
-        if content_matches < 3:
+        if content_matches < 1:  # Reduced from 3 - require at least 1 mention
             return 0.0
-        return 0.15
+        return 0.25  # Increased from 0.15 - content-only matches are still valuable
     
     # Calculate weighted score
     score = (
@@ -515,7 +528,11 @@ def collect_startup_options():
         "start_all_vpns": False,
     }
 
-    if not sys.stdin.isatty():
+    # Check for command-line mode argument first
+    choice = None
+    if len(sys.argv) > 1 and sys.argv[1] in ["1", "2", "3"]:
+        choice = sys.argv[1]
+    elif not sys.stdin.isatty():
         return options
 
     print("\n" + "=" * 60)
@@ -526,16 +543,18 @@ def collect_startup_options():
     print("  [2] SERVE + CRAWLER - Serve + continuous crawler (no VPN)")
     print("  [3] SERVE + CRAWLER + VPN - Full setup with VPN tunnels\n")
     
-    while True:
-        try:
-            choice = input("Enter your choice (1, 2, or 3): ").strip()
-            if choice in ["1", "2", "3"]:
+    if choice is None:
+        # Only prompt if choice not set from command-line args
+        while True:
+            try:
+                choice = input("Enter your choice (1, 2, or 3): ").strip()
+                if choice in ["1", "2", "3"]:
+                    break
+                print("Invalid choice. Please enter 1, 2, or 3.")
+            except EOFError:
+                # Non-interactive mode, default to option 1
+                choice = "1"
                 break
-            print("Invalid choice. Please enter 1, 2, or 3.")
-        except EOFError:
-            # Non-interactive mode, default to option 1
-            choice = "1"
-            break
 
     if choice == "1":
         # SERVE ONLY
