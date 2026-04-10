@@ -22,8 +22,9 @@ max_delay = 2
 # This ensures diversity: crawl many sites shallowly rather than one site deeply
 max_pages_per_domain = 200
 # Maximum crawl depth (following links: 0=seed URLs only, 1=direct links from seeds, etc)
-# Deeper = more comprehensive but slower; 3-4 is good for general indexing
-max_crawl_depth = 3
+# Seeds crawl to 20, discovered URLs crawl to this depth
+# Deeper = more comprehensive but slower; increased to 6 for better coverage
+max_crawl_depth = 6
 # Minimum crawl depth before applying max_pages_per_domain (crawl at least this deep per domain)
 min_depth_per_domain = 1
 # URL path depth limit (don't crawl beyond /path/to/page/depth like this)

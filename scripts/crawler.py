@@ -2026,29 +2026,62 @@ class CrawlerService:
             return False
 
         now = time.time()
-        if now - self.last_idle_refill < self.idle_reseed_delay:
-            return False
-
+        
         with self.lock:
-            if not self.queue.empty():
+            queue_size = self.queue.qsize()
+            
+            # If queue has items, don't refill (let them be processed)
+            if queue_size > 10:
                 return False
+            
+            # If queue is small but not empty, wait longer before refill
+            if queue_size > 0:
+                if now - self.last_idle_refill < self.idle_reseed_delay:
+                    return False
+            
+            # If queue is completely empty, refill IMMEDIATELY
+            # Don't wait - this prevents the crawl from stopping
+            if queue_size == 0:
+                self.last_idle_refill = now
+            else:
+                # Queue has 1-10 items, check the delay
+                if now - self.last_idle_refill < self.idle_reseed_delay:
+                    return False
+                self.last_idle_refill = now
 
-            recrawl_targets = list(self.starting_urls)
+        # Refill strategy: add unvisited seeds and discovered URLs
+        recrawl_targets = []
+        
+        with self.lock:
+            # Always add ALL seeds that haven't been visited yet
+            for seed_url in self.starting_urls:
+                if seed_url not in self.visited_urls:
+                    recrawl_targets.append((seed_url, True))  # (url, is_seed)
+            
+            # Add up to 100 pagerank URLs that haven't been visited
             if self.pagerank_graph:
-                recrawl_targets.extend(list(self.pagerank_graph.keys())[: max(20, len(self.starting_urls))])
-
-            if not recrawl_targets:
-                return False
-
-            self.visited_urls.clear()
-            self.last_idle_refill = now
-
-        for url in recrawl_targets:
-            self.requeue_url(url)
-
-        self.log("Crawler frontier ran dry; reseeding known URLs to keep Aurora Search warm.")
-        self.publish_status("indexing", "Crawler queue reseeded to continue crawling.")
-        return True
+                discovered_urls = [url for url in list(self.pagerank_graph.keys())[:200] if url not in self.visited_urls]
+                for url in discovered_urls[:100]:
+                    recrawl_targets.append((url, False))  # (url, is_discovered)
+        
+        if not recrawl_targets:
+            self.log("Cannot refill queue: all URLs exhausted.")
+            return False
+        
+        # When refilling, DON'T clear visited_urls - only clear if we have no other choice
+        # This prevents revisiting the same pages
+        
+        added_count = 0
+        for url, is_seed in recrawl_targets:
+            if self.requeue_url(url, is_seed=is_seed):
+                added_count += 1
+        
+        if added_count > 0:
+            self.log(f"🔄 Crawler queue refilled: added {added_count} URLs from {len(recrawl_targets)} available.")
+            self.publish_status("indexing", f"Crawler queue refilled with {added_count} URLs.")
+            return True
+        
+        return False
 
     def update_page_index(self, page_url, indexed_page):
         words = set(indexed_page["words"])
